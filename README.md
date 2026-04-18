@@ -87,6 +87,18 @@ This is why the hook composes with any memory system, not just Mnemos — it's t
 
 The semantic-memory layer (what is true) gets all the attention in AI memory design. The episodic-memory layer (what happened, in what order, how recently) is where most systems are silent. The time hook is the smallest possible patch that adds the missing piece.
 
+### The bigger claim: temporal cognition is a missing primitive
+
+Zoom out. Everything above is about one small hook on one harness. The reason any of it matters is that it exposes a larger gap in how AI systems are built right now: **temporal cognition is not an optional enhancement layer for reasoning — it is a missing primitive.**
+
+Reasoning operates on two axes. One is **space / context**: what is adjacent to what, what is in scope, what is being referred to. The other is **time**: what happened when, what follows what, what is still current, what has decayed, what has been true for long enough to matter. Every reasoning system needs both. LLMs out of the box have the first and not the second. They're trained on token sequences where time is implicit in ordering, then deployed into interactive, multi-session contexts where they must reason about *real* elapsed time in the outside world — and they do not have access to it.
+
+They do not abstain. They confabulate. "Good morning" at midnight is not a glitch; it is the reasoning process trying to produce a coherent response with a missing primitive, filling the time-shaped hole with plausible hallucination, and reasoning downstream from the hallucinated premise.
+
+Humans are so deeply embodied in time that it's invisible to them — like asking a fish about water. AI systems make time's load-bearing nature visible by failing in specific ways when it's absent. Those failures aren't edge cases. They're the normal output of a reasoning system trying to operate on a changing world without a clock. They show up in cognition (can't reason about decay, change, causation in time, or "is this still true"), in communication (can't coordinate rhythm, can't honor "I'll get to that later," can't match the other agent's cadence), and in memory (stored `created_at` fields are dead metadata without a live "now" to subtract from).
+
+The field has been building larger and more capable reasoning systems without one of the two axes reasoning happens on. Nobody has noticed in earnest because LLMs are fluent enough to paper over the gap most of the time. This hook is a small practical patch for one harness. The architectural version of the fix — AI systems that know what time it is as a first-class input, not an occasional injection — is what the rest of the field still needs to ship.
+
 ### Status line
 
 Sometimes you want to know if your server is about to OOM in the middle of a build without alt-tabbing. Visible at a glance, updates every 5 seconds, zero extra cost (the script runs locally, not through the model).
