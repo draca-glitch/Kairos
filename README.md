@@ -52,6 +52,31 @@ This hook fixes it by prepending the current server time to every user prompt as
 
 The time hook gets *much* better when Claude also has persistent memory across sessions. Timestamps become anchors the memory can reference: *"last Tuesday you stored X, and now it's Friday — update?"* Without memory, the time signal is just a within-session cue. With memory, it becomes a spine for continuity across weeks. If you're running [Mnemos](https://github.com/draca-glitch/mnemos) or similar, the combination is a real unlock — stored memories carry accurate dates, recall gets temporally coherent, and Claude can actually reason about "how long has it been."
 
+### What Claude Code already does (and why it's not enough)
+
+Claude Code does inject the current **date** at session start — you can see it in the system context (`Today's date is YYYY-MM-DD`). Two problems:
+
+1. **It's the date, not the time.** No hour, no minute. The model knows it's 2026-04-18 but not whether it's 09:00 or 22:00. So even within a single day it can't reason about morning vs evening, can't compute "5 minutes ago" vs "5 hours ago," can't correlate with timestamps in logs / cron / anything operational. Date alone is the wrong granularity for the kind of work people actually do in long sessions.
+2. **It's frozen at session start.** With tmux that's the default for serious work — sessions run overnight, across weekends, sometimes for days. The session-start date is a one-time stamp, not a live clock. Run a session into tomorrow and Claude still thinks it's yesterday.
+
+The hook fixes both. Every prompt brings a fresh, full timestamp (`YYYY-MM-DD HH:MM:SS TZ`), so Claude always knows the actual present moment — date, time, and timezone — not just what date the session happened to start on.
+
+### The missing reference point
+
+Almost every memory system on the planet stores a `created_at` field. **None of that matters without a "now" to subtract from.**
+
+Stored timestamps are historical when — facts about the past, frozen in a row. The hook gives the model present when — the live anchor for "right now, this turn." Without both, neither is useful for time reasoning:
+
+- **Memory's `created_at`** = "this was true at T1"
+- **Hook's per-message timestamp** = "the present moment is T2"
+- **Model** = can subtract them, reason about elapsed time, detect drift, weight recency
+
+Without the hook, even perfect memory timestamps are dead metadata for the model. It's like having a stopwatch that records lap times but no display for the current time. Lap times are noise without a reference. The model has historical when, but no "now" to make sense of it.
+
+This is why the hook composes with any memory system, not just Mnemos — it's the foundation layer that makes stored timestamps actually useful. Mnemos benefits, generic SQLite memory benefits, even raw conversation history benefits. **It's the reference point everyone forgot to ship.**
+
+The semantic-memory layer (what is true) gets all the attention in AI memory design. The episodic-memory layer (what happened, in what order, how recently) is where most systems are silent. The time hook is the smallest possible patch that adds the missing piece.
+
 ### Status line
 
 Sometimes you want to know if your server is about to OOM in the middle of a build without alt-tabbing. Visible at a glance, updates every 5 seconds, zero extra cost (the script runs locally, not through the model).
