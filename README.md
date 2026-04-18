@@ -38,6 +38,16 @@ Verify live: next message to Claude should arrive with something like `2026-04-1
 
 Claude, by default, **lacks temporal cohesion**. A new message from you looks identical whether you wrote it 10 seconds or 10 hours after the previous one. From Claude's side, there's no "between" — each turn is a fresh forward pass. The gap doesn't exist.
 
+But here's the thing: the model does not know it doesn't know. When the conversation needs a time-shaped input — "it's been a while," "good morning," "maybe call it a night" — that slot in the reasoning has to be filled with something. Without a real timestamp, the model fills it by **confabulation**. You've seen the outputs:
+
+- "Good morning!" at midnight
+- "You must be tired" after one minute of inactivity
+- "Go to bed, it's late" at 8pm
+- "It's been a while since your last message" 30 seconds in
+- "Take your time" on a message you've been typing for 2 hours
+
+Those aren't cute glitches. Those are the model silently hallucinating a temporal premise and then reasoning downstream from it. The conclusions that follow inherit the bad premise. The hook doesn't *add* temporal cognition to Claude — Claude was already doing time-inference, just blindly. The hook replaces **confabulation with grounding**. Same reasoning loop, correct input.
+
 This hook fixes it by prepending the current server time to every user prompt as a system reminder. With a timestamp on every turn, Claude can compute the delta and adjust:
 
 - "You just wrote 30 seconds ago, stay terse"
