@@ -121,6 +121,24 @@ This escalates the thesis of this repository from quality-of-life patch to somet
 
 Sometimes you want to know if your server is about to OOM in the middle of a build without alt-tabbing. Visible at a glance, updates every 5 seconds, zero extra cost (the script runs locally, not through the model).
 
+### Status line — Windows variant
+
+`hooks/statusline-windows.sh` + `hooks/statusline.ps1` is a paired Windows-native version. Run Claude Code in Git Bash or WSL, use the bash wrapper as the `statusLine` command, and the PowerShell sidecar does the actual system-info queries (CPU load, memory, disk, uptime, TCP connection count).
+
+PowerShell process spawn is ~200-500ms on Windows, which would visibly drag the status line if called on every redraw. The bash wrapper caches PS output to `~/.claude/.statusline_cache` with a 30-second TTL — fresh enough to matter, cheap enough to hide the spawn cost.
+
+Install:
+
+```bash
+# From within Git Bash or WSL
+mkdir -p ~/.claude/hooks
+cp hooks/statusline-windows.sh ~/.claude/hooks/statusline.sh
+cp hooks/statusline.ps1        ~/.claude/hooks/statusline.ps1
+chmod +x ~/.claude/hooks/statusline.sh
+```
+
+Then point `settings.json` at `~/.claude/hooks/statusline.sh` the same way as the Linux version. Hostname defaults to `$COMPUTERNAME`; override by exporting `CLAUDE_HOST_LABEL` if you want a custom display name.
+
 ## Companion
 
 - **[claude-hud](https://github.com/jarrodwatts/claude-hud)** — richer status bar plugin with live view of current tool calls, token usage, and session context. Runs alongside or replaces `statusline.sh`. Enable via `enabledPlugins`.
