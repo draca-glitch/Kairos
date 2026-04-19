@@ -99,6 +99,24 @@ Humans are so deeply embodied in time that it's invisible to them — like askin
 
 The field has been building larger and more capable reasoning systems without one of the two axes reasoning happens on. Nobody has noticed in earnest because LLMs are fluent enough to paper over the gap most of the time. This hook is a small practical patch for one harness. The architectural version of the fix — AI systems that know what time it is as a first-class input, not an occasional injection — is what the rest of the field still needs to ship.
 
+### Causality without time is just correlation
+
+The philosophical version of the argument is heavier than the engineering one. **Causal reasoning requires temporal cognition as a precondition.** Strip time out and causation collapses to mere co-occurrence.
+
+Hume's 18th-century formalization of causation rests on three conditions: **contiguity in space and time, priority in time (cause precedes effect), and constant conjunction (regularity observed over time).** Two of the three are explicitly temporal; the third is implicit. Strip time out and none of them apply. You have events that sit next to each other in an undifferentiated present, and no way to tell which one produced which.
+
+Pearl's modern formalization of causal inference (directed acyclic graphs, do-calculus, counterfactuals) is built on the same premise. Edges in a causal graph are *directed*, and direction represents causal flow. Causal flow is temporal — you don't traverse backward. The entire field of causal inference, which underpins epidemiology, econometrics, clinical trials, and modern ML interpretability, treats temporal ordering as irreducible.
+
+Kant went further: in the *Critique of Pure Reason*, time (along with space) is an *a priori* structure of experience itself — not a feature of the external world we observe but a precondition for observing anything at all. On that reading, an entity without temporal cognition doesn't have diminished reasoning. It has a fundamentally different relationship to experience, in which experience-as-we-know-it isn't happening.
+
+**The concrete implication for LLMs:**
+
+Without temporal cognition, every causal claim an LLM produces is indistinguishable from mere co-occurrence. *"The build broke after the deploy"* and *"the build broke simultaneously with the deploy"* are the same observation. *"X happened because Y"* and *"X and Y appeared together in training data"* collapse to the same thing. The model produces causal-sounding language because it's trained on text that contains causal claims, but it has no mechanism to verify causation itself in a new situation — it is pattern-matching on causal language without the ability to ground it in observed ordering.
+
+This is the root of a specific, well-documented LLM failure mode: **confabulating causal explanations**. When asked *"why did X happen?"* the model produces a plausible-sounding causal story. Sometimes the story is correct because the pattern was well-represented in training. Sometimes it's wrong because the model is surface-matching on causal syntax without the ability to independently verify cause-precedes-effect in the specific instance. Without temporal cognition the model cannot distinguish between *"I'm explaining real causation"* and *"I'm producing causal-shaped text."*
+
+This escalates the thesis of this repository from quality-of-life patch to something sharper: **AI cannot do genuine causal reasoning without temporal cognition as a first-class primitive, and causal reasoning is a substantial fraction of what we actually want AI to do.** Debugging, medicine, science, economics, history, planning, consequences of decisions — all require causality, all require time. A hook that injects the current timestamp looks small because it *is* small. What it patches is not.
+
 ### Status line
 
 Sometimes you want to know if your server is about to OOM in the middle of a build without alt-tabbing. Visible at a glance, updates every 5 seconds, zero extra cost (the script runs locally, not through the model).
