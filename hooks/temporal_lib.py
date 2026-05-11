@@ -17,6 +17,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
+# Idle cutoff for transcript-mtime fallback when CLAUDE_SESSION_ID is absent.
+# Defaults to 4h so the temporal pipeline survives ordinary work pauses
+# (lunch, meetings) without degrading silently to "session-start". Override
+# via env when running headless/long-idle sessions.
+TRANSCRIPT_MAX_IDLE_SECONDS = int(
+    os.environ.get("CLAUDE_KIT_TRANSCRIPT_MAX_IDLE_SECONDS", "14400")
+)
+
+
 def parse_payload(raw: str) -> dict:
     try:
         return json.loads(raw)
@@ -40,7 +49,7 @@ def find_transcript() -> Path | None:
             return jsonl
 
     candidates = sorted(home.rglob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
-    if candidates and time.time() - candidates[0].stat().st_mtime < 300:
+    if candidates and time.time() - candidates[0].stat().st_mtime < TRANSCRIPT_MAX_IDLE_SECONDS:
         return candidates[0]
     return None
 
