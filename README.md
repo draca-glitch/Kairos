@@ -6,7 +6,7 @@ Small things that make Claude Code feel less stateless:
 
 1. **`hooks/time.sh`**: injects current server time on every user prompt so Claude has temporal cohesion across your messages. Without it, Claude sees all your messages as "now" and can't tell whether you replied in 10 seconds or 10 hours.
 2. **`hooks/temporal-state.py`**: sibling of `time.sh`. Where time.sh gives the raw timestamp, this one computes the *shape* of time and prepends it as a single-line summary: gap-since-last, cross-day status, time-of-day bucket, input-cadence (rapid-fire vs reflective vs resumed-after-gap), and session-phase (continuing vs interruption-pivot vs session-start). Lets Claude arrive at the prompt with computed temporal context already grounded instead of having to derive it each turn.
-3. **`hooks/temporal-routing.py`**: Layer 6. Translates the temporal state into deterministic tool-routing advisories (`suggest=memory_search-first`, `skip=TaskCreate-overhead`, etc.) so the temporal signal isn't only informational but procedural. Six rules v0: long-gap → memory-first, cross-day → staleness flag, rapid-fire → skip overhead, session-start → read CLAUDE.md, reflective + long prompt → extended-thinking-ok, late-night-resumed → confirm-before-destructive. Silent when no rule fires.
+3. **`hooks/temporal-routing.py`**: Layer 6. Translates the temporal state into deterministic tool-routing advisories (`suggest=memory_search-first`, `skip=TaskCreate-overhead`, etc.) so the temporal signal isn't only informational but procedural. Seven rules v0: long-gap → memory-first, cross-day → staleness flag, rapid-fire → skip overhead, session-start → read CLAUDE.md, reflective + long prompt → write-longer-reasoning-prose, late-night-resumed → confirm-before-destructive, tech-keyword prompt → temporal_staleness_audit-first (R7, integrates Layer 3). Silent when no rule fires.
 4. **`hooks/temporal-routing-tracker.py`**: PostToolUse companion to routing. Logs every tool call alongside the advisory in force at the time so adherence can be measured offline (falsifiability).
 5. **`mcp/temporal-pattern.py`**: MCP server exposing `temporal_pattern_query` tool. Where `time.sh` and `temporal-state.py` tell Claude about *this moment*, this one lets Claude query the user's *baseline pattern* across all recorded sessions: hour-of-day activity heatmap, session durations, between-session gaps, and a current-state-vs-baseline comparison. Lets Claude calibrate pacing/tone against your real rhythm, not heuristics.
 6. **`mcp/temporal-staleness.py`**: MCP server exposing `temporal_staleness_audit` tool. Given a topic + optional domain, returns a stale-risk assessment (`low/medium/high`) based on time-since-training-cutoff and domain-volatility table (tech: 90d half-life, news: 7d, security/CVE: 30d, etc.). Tells Claude when to web-search vs proceed vs qualify.
@@ -75,7 +75,7 @@ Shared primitives live in `hooks/temporal_lib.py` (transcript discovery, gap cla
 
 Runs as a second `UserPromptSubmit` hook after `temporal-state.py`. Where the state hook *describes* time, the routing hook *recommends* procedural adjustments: which tool to call first, what to skip, what posture to take. Output is single-line and silent when no rule fires, so nothing gets nudged when nothing matters.
 
-Six deterministic rules v0:
+Seven deterministic rules v0:
 
 | Trigger | Advice |
 |---------|--------|
@@ -83,10 +83,11 @@ Six deterministic rules v0:
 | cross-day=yes AND gap ≥ 4h | suggest memory_search-first; flag staleness |
 | cadence ∈ {rapid-fire, very-rapid-fire} | skip TaskCreate-overhead, skip preamble |
 | phase=session-start | suggest read-CLAUDE.md-first |
-| cadence=reflective-pace AND prompt > 200 chars | suggest extended-thinking-ok |
+| cadence=reflective-pace AND prompt > 200 chars | suggest write-longer-reasoning-prose |
 | time-of-day=late-night AND resumed-after-* cadence | suggest confirm-before-destructive |
+| prompt mentions time-volatile-tech keyword | suggest temporal_staleness_audit-first (R7, Layer 3 integration) |
 
-Companion `hooks/temporal-routing-tracker.py` is a `PostToolUse` hook that records every tool call alongside the advisory in force at the time (in `/root/work/temporal-routing-log.jsonl`), so adherence statistics can be computed offline. This is the falsifiability layer: with vs without temporal-aware routing should produce measurably different tool-sequence distributions.
+Companion `hooks/temporal-routing-tracker.py` is a `PostToolUse` hook that records every tool call alongside the advisory in force at the time (in `$CLAUDE_KIT_STATE_DIR/temporal-routing-log.jsonl`), so adherence statistics can be computed offline. This is the falsifiability layer: with vs without temporal-aware routing should produce measurably different tool-sequence distributions. Run `./analyze-routing-adherence.py` against the log to compute per-advisory adherence rates.
 
 ## Staleness audit (Layer 3)
 
