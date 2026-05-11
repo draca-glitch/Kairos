@@ -43,6 +43,7 @@ SUGGEST_TO_TOOL_PREFIX = {
     "memory_search-first": "mcp__agent-memory__memory_search",
     "read-CLAUDE.md-first": "Read",
     "temporal_staleness_audit-first": "mcp__temporal-staleness__temporal_staleness_audit",
+    "temporal_future_query-first": "mcp__temporal-future__temporal_future_query",
     "flag-staleness": None,
     "extended-thinking-ok": None,
     "write-longer-reasoning-prose": None,
