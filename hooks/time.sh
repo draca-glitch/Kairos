@@ -21,7 +21,7 @@
 # the timestamp on any jq failure (missing field, not-JSON input, jq
 # absent), since silent skip is worse than spurious output.
 #
-# Marker file: $TMPDIR/claude-kit-time/<session_id>.last-date
+# Marker file: $TMPDIR/kairos-time/<session_id>.last-date
 # Per-session isolation via $CLAUDE_SESSION_ID. Cleared on reboot (tmpfs).
 #
 # Usage in settings.json:
@@ -41,7 +41,7 @@ case "$PROMPT_TEXT" in
 esac
 
 SESSION="${CLAUDE_SESSION_ID:-default}"
-MARKER_DIR="${TMPDIR:-/tmp}/claude-kit-time"
+MARKER_DIR="${TMPDIR:-/tmp}/kairos-time"
 MARKER="$MARKER_DIR/${SESSION}.last-date"
 mkdir -p "$MARKER_DIR" 2>/dev/null
 
