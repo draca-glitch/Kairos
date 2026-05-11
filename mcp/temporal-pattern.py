@@ -45,7 +45,39 @@ PROJECTS_DIR = Path(os.environ.get("CLAUDE_PROJECTS_DIR", str(Path.home() / ".cl
 # --- Transcript scanning ---
 
 
+def _import_is_real_user_prompt():
+    """Reuse hooks/temporal_lib.is_real_user_prompt when reachable.
+
+    The MCP server may be deployed alongside the hooks (sibling directory in
+    the repo, or both under ~/.claude/) or standalone. We try a handful of
+    likely paths and fall back to an inline copy if none resolve, so the
+    server stays self-contained even when distributed without the hooks.
+    """
+    here = Path(__file__).resolve().parent
+    candidates = [
+        here.parent / "hooks",                       # repo layout: mcp/ + hooks/
+        Path.home() / ".claude" / "hooks",           # canonical deployed path
+        Path(os.environ.get("CLAUDE_KIT_HOOKS_DIR", "")),
+    ]
+    for c in candidates:
+        if c and (c / "temporal_lib.py").exists():
+            if str(c) not in sys.path:
+                sys.path.insert(0, str(c))
+            try:
+                from temporal_lib import is_real_user_prompt as _shared
+                return _shared
+            except Exception:
+                continue
+    return None
+
+
+_shared_filter = _import_is_real_user_prompt()
+
+
 def _is_real_user_prompt(event: dict) -> bool:
+    if _shared_filter is not None:
+        return _shared_filter(event)
+    # Inline fallback, only used when temporal_lib is not reachable.
     if event.get("type") != "user":
         return False
     msg = event.get("message") or {}
