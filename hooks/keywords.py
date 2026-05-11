@@ -80,3 +80,20 @@ R7_TRIGGER_KEYWORDS: tuple[str, ...] = (
     "model version", "latest version", "release notes",
     "deprecat", "breaking change", "new in", "as of",
 )
+
+
+R8_TRIGGER_KEYWORDS: tuple[str, ...] = (
+    # Forward-time language: when the user is anchoring on what's coming,
+    # Layer 5 (temporal_future_query) should surface overdue/upcoming work
+    # before the model answers generically.
+    "deadline", "due", "overdue", "upcoming",
+    "schedule", "scheduled", "next week", "this week",
+    "before friday", "before monday", "before tuesday",
+    "before wednesday", "before thursday", "before saturday",
+    "before sunday",
+    "tomorrow", "imorgon",
+    "planera", "planering", "plan for",
+    "what's left", "what is left", "what's coming",
+    "remaining", "outstanding",
+    "soon", "snart",
+)
