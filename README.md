@@ -2,19 +2,20 @@
 
 > *kairos* (καιρός): the meaning-bearing moment, as distinct from *chronos* (Χρόνος), measured time. This kit is about the former: not "what does the clock say" but "what does the time *mean* for this turn".
 
-> **Status: work in progress.** Kairos is the public artifact accompanying the **Wedlund Temporal Theorem**, a research project by Mikael Wedlund on temporal cognition as a constitutive primitive of artificial intelligence. The kit is the substrate the theory is being tested against, not the final claim. Layers 1, 3, 4, and 6 ship today (v0.3.0); Layer 5 is unbuilt; the paper is unpublished. API is pre-1.0 and may change between minor versions. Companion project: [Mnemos](https://github.com/draca-glitch/mnemos) (memory layer).
+> **Status: work in progress.** Kairos is the public artifact accompanying the **Wedlund Temporal Theorem**, a research project by Mikael Wedlund on temporal cognition as a constitutive primitive of artificial intelligence. The kit is the substrate the theory is being tested against, not the final claim. Layers 1, 3, 4, 5, and 6 ship today (v0.4.0); Layer 2 is provided by the companion [Mnemos](https://github.com/draca-glitch/mnemos) memory project; the paper is unpublished. API is pre-1.0 and may change between minor versions.
 
 Small things that make Claude Code feel less stateless:
 
 1. **`hooks/time.sh`**: injects current server time on every user prompt so Claude has temporal cohesion across your messages. Without it, Claude sees all your messages as "now" and can't tell whether you replied in 10 seconds or 10 hours.
 2. **`hooks/temporal-state.py`**: sibling of `time.sh`. Where time.sh gives the raw timestamp, this one computes the *shape* of time and prepends it as a single-line summary: gap-since-last, cross-day status, time-of-day bucket, input-cadence (rapid-fire vs reflective vs resumed-after-gap), and session-phase (continuing vs interruption-pivot vs session-start). Lets Claude arrive at the prompt with computed temporal context already grounded instead of having to derive it each turn.
-3. **`hooks/temporal-routing.py`**: Layer 6. Translates the temporal state into deterministic tool-routing advisories (`suggest=memory_search-first`, `skip=TaskCreate-overhead`, etc.) so the temporal signal isn't only informational but procedural. Seven rules v0: long-gap → memory-first, cross-day → staleness flag, rapid-fire → skip overhead, session-start → read CLAUDE.md, reflective + long prompt → write-longer-reasoning-prose, late-night-resumed → confirm-before-destructive, tech-keyword prompt → temporal_staleness_audit-first (R7, integrates Layer 3). Silent when no rule fires.
+3. **`hooks/temporal-routing.py`**: Layer 6. Translates the temporal state into deterministic tool-routing advisories (`suggest=memory_search-first`, `skip=TaskCreate-overhead`, etc.) so the temporal signal isn't only informational but procedural. Eight rules v0: long-gap → memory-first, cross-day → staleness flag, rapid-fire → skip overhead, session-start → read CLAUDE.md, reflective + long prompt → write-longer-reasoning-prose, late-night-resumed → confirm-before-destructive, tech-keyword prompt → temporal_staleness_audit-first (R7, integrates Layer 3), forward-time prompt → temporal_future_query-first (R8, integrates Layer 5). Silent when no rule fires.
 4. **`hooks/temporal-routing-tracker.py`**: PostToolUse companion to routing. Logs every tool call alongside the advisory in force at the time so adherence can be measured offline (falsifiability).
 5. **`mcp/temporal-pattern.py`**: MCP server exposing `temporal_pattern_query` tool. Where `time.sh` and `temporal-state.py` tell Claude about *this moment*, this one lets Claude query the user's *baseline pattern* across all recorded sessions: hour-of-day activity heatmap, session durations, between-session gaps, and a current-state-vs-baseline comparison. Lets Claude calibrate pacing/tone against your real rhythm, not heuristics.
 6. **`mcp/temporal-staleness.py`**: MCP server exposing `temporal_staleness_audit` tool. Given a topic + optional domain, returns a stale-risk assessment (`low/medium/high`) based on time-since-training-cutoff and domain-volatility table (tech: 90d half-life, news: 7d, security/CVE: 30d, etc.). Tells Claude when to web-search vs proceed vs qualify.
-7. **`hooks/statusline.sh`**: always-on status line showing host, load, memory, disk, uptime. Lives at the bottom of Claude Code. Useful for knowing what your machine is actually doing while you chat.
+7. **`mcp/temporal-future.py`**: Layer 5. MCP server exposing `temporal_future_query` and `temporal_obligations_for` tools. Reads the agent's task database and Mnemos memory store and returns overdue / due-today / upcoming items plus expiring memories within a horizon (default 7 days), with a `highlights` list of one-liners the model should pay attention to. Lets Claude anticipate what's coming, not just describe what's now.
+8. **`hooks/statusline.sh`**: always-on status line showing host, load, memory, disk, uptime. Lives at the bottom of Claude Code. Useful for knowing what your machine is actually doing while you chat.
 
-That's the whole kit. Intentionally small, deliberately layered: each piece names *which layer of temporal cognition* it provides (1: present-moment, 3: self-staleness, 6: meta-tool-routing) in the six-layer model.
+That's the whole kit. Intentionally small, deliberately layered: each piece names *which layer of temporal cognition* it provides (1: present-moment, 3: self-staleness, 4: other-temporal-modeling, 5: future-orientation, 6: meta-tool-routing) in the six-layer model.
 
 ## Temporal pattern MCP
 
@@ -77,7 +78,7 @@ Shared primitives live in `hooks/temporal_lib.py` (transcript discovery, gap cla
 
 Runs as a second `UserPromptSubmit` hook after `temporal-state.py`. Where the state hook *describes* time, the routing hook *recommends* procedural adjustments: which tool to call first, what to skip, what posture to take. Output is single-line and silent when no rule fires, so nothing gets nudged when nothing matters.
 
-Seven deterministic rules v0:
+Eight deterministic rules v0:
 
 | Trigger | Advice |
 |---------|--------|
@@ -88,6 +89,7 @@ Seven deterministic rules v0:
 | cadence=reflective-pace AND prompt > 200 chars | suggest write-longer-reasoning-prose |
 | time-of-day=late-night AND resumed-after-* cadence | suggest confirm-before-destructive |
 | prompt mentions time-volatile-tech keyword | suggest temporal_staleness_audit-first (R7, Layer 3 integration) |
+| prompt mentions forward-time concept | suggest temporal_future_query-first (R8, Layer 5 integration) |
 
 Companion `hooks/temporal-routing-tracker.py` is a `PostToolUse` hook that records every tool call alongside the advisory in force at the time (in `$CLAUDE_KIT_STATE_DIR/temporal-routing-log.jsonl`), so adherence statistics can be computed offline. This is the falsifiability layer: with vs without temporal-aware routing should produce measurably different tool-sequence distributions. Run `./analyze-routing-adherence.py` against the log to compute per-advisory adherence rates.
 
@@ -123,6 +125,37 @@ MCP server exposing `temporal_staleness_audit(topic, domain?)`. Returns a risk a
 
 Suggestions: `proceed` (low risk), `qualify` (medium), `web_search` (high). Domain is optional, if omitted, the tool infers from keywords in the topic. Training cutoff is `2026-01-01` by default; override via `CLAUDE_TRAINING_CUTOFF` env var.
 
+## Future orientation (Layer 5)
+
+```
+$ # via MCP, args = {"horizon_days": 7}
+{
+  "now": "2026-05-11T22:14:45 CEST",
+  "horizon_days": 7,
+  "tasks": {
+    "counts": {"overdue": 23, "due_today": 0, "upcoming_in_horizon": 2},
+    "overdue":  [{"id": 91, "title": "WO 1235527: ...", "area": "iss-seb-pdc2", "due_date": "2025-06-02", "days_until": -343, ...}],
+    "upcoming": [{"id": 64, "title": "Reservkraftsprov PDC1 – Maj", "due_date": "2026-05-17", "days_until": 6, ...}]
+  },
+  "expiring_memories": {"available": true, "count": 0, "expiring": []},
+  "highlights": [
+    "23 overdue task(s) (4 high-priority)",
+    "next: 'Reservkraftsprov PDC1 – Maj' in 6d (iss-seb-pdc1)"
+  ]
+}
+```
+
+MCP server exposing `temporal_future_query(horizon_days=7)` and `temporal_obligations_for(area, horizon_days=7)`. Reads task and memory databases directly (paths via `KAIROS_TASKS_DB` and `KAIROS_MEMORY_DB`, defaults `~/work/tasks.db` and `~/work/memory.db`). If a database does not exist on disk, that source reports `{available: false}` and the rest of the query still returns — adopters without a tasks system still get expiring-memory queries, and adopters without memory still get task queries.
+
+Schema expectations:
+
+| DB | Table | Required fields |
+|---|---|---|
+| tasks | `tasks` | `id`, `title`, `area`, `priority` (`high`/`medium`/`low`), `status` (`open`/`done`/`cancelled`), `due_date` (ISO date or NULL) |
+| memory | `memories` | `id`, `content`, `status`, `valid_until` (ISO date or NULL) — Mnemos schema |
+
+The `highlights` list is the model's quick-attention layer: one-liners like `"3 task(s) due TODAY"`, `"23 overdue (4 high-priority)"`, `"next: <title> in 6d (area)"`, `"M memory(ies) expiring in window"`. Designed to fit in a thinking budget so the model can absorb forward-state without parsing the structured payload.
+
 ## Status line
 
 ```
@@ -138,12 +171,13 @@ Refreshes every 5 seconds (configurable). No external dependencies beyond standa
 mkdir -p ~/.claude/hooks ~/.claude/mcp
 cp hooks/time.sh hooks/statusline.sh ~/.claude/hooks/
 cp hooks/temporal_lib.py hooks/temporal-state.py hooks/temporal-routing.py hooks/temporal-routing-tracker.py ~/.claude/hooks/
-cp mcp/temporal-pattern.py mcp/temporal-staleness.py ~/.claude/mcp/
+cp mcp/temporal-pattern.py mcp/temporal-staleness.py mcp/temporal-future.py ~/.claude/mcp/
 chmod +x ~/.claude/hooks/*.sh ~/.claude/hooks/*.py ~/.claude/mcp/*.py
 
 # 2. Merge the UserPromptSubmit, PostToolUse, and statusLine entries from
 #    templates/settings.json into your ~/.claude/settings.json. Register the
-#    temporal-pattern and temporal-staleness MCP servers in ~/.claude.json.
+#    temporal-pattern, temporal-staleness, and temporal-future MCP
+#    servers in ~/.claude.json.
 #    Don't overwrite, you probably have other hooks, permissions, and MCPs.
 
 # 3. Restart Claude Code or open /hooks once so the watcher picks it up.
@@ -182,6 +216,8 @@ python3 -m unittest tests.test_temporal_lib
 | `CLAUDE_KIT_LOG_ROTATE_BYTES` | `10485760` (10 MB) | When tracker log rotates |
 | `CLAUDE_KIT_LOG_KEEP_ROTATIONS` | `3` | How many rotated logs to keep before deletion |
 | `CLAUDE_TRAINING_CUTOFF` | `2026-01-01` | Date staleness MCP measures elapsed days against |
+| `KAIROS_TASKS_DB` | `~/work/tasks.db` | Task database read by Layer 5 (temporal-future MCP) |
+| `KAIROS_MEMORY_DB` | `~/work/memory.db` | Memory database read by Layer 5 for expiring memories |
 
 ## time.sh vs. custom Layer-1 sources
 

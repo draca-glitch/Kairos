@@ -6,26 +6,39 @@ The kit is pre-1.0: minor bumps may include incompatible changes when the cost o
 
 ## [Unreleased]
 
+Nothing yet. v0.4.0 just shipped.
+
+Next probable: a controlled with-vs-without-Kairos benchmark on time-shaped reasoning tasks to upgrade the paper's "constitutive" claim from architectural assertion to measured outcome.
+
+## [0.4.0] - 2026-05-11
+
+**Layer 5 ships.** Forward-orientation is now first-class. The kit now implements layers 1, 3, 4, 5, and 6 of the six-layer model (Layer 2 = Mnemos companion).
+
 ### Added
 
-* `hooks/keywords.py` — single source-of-truth for `KEYWORD_TO_DOMAIN` (staleness MCP) and `R7_TRIGGER_KEYWORDS` (routing R7). Eliminates the silent two-list drift between Layers 3 and 6.
+* `mcp/temporal-future.py` — Layer 5 future-orientation MCP. Tools `temporal_future_query(horizon_days=7)` and `temporal_obligations_for(area, horizon_days=7)` return overdue / due-today / upcoming items + expiring memories + a `highlights` list. Reads task and memory databases directly, env-configurable via `KAIROS_TASKS_DB` and `KAIROS_MEMORY_DB`. Gracefully degrades when either database is absent (returns `{available: false}` for that source).
+* `tests/test_temporal_future.py` — 12 unit tests covering horizon filtering, done-status exclusion, days-until math, area filtering, expiring-memory window, both-DBs-absent fallback.
+* `R8` routing rule: prompt mentions forward-time concepts (deadline, due, overdue, upcoming, schedule, tomorrow, snart, planera, this week, ...) → suggest `temporal_future_query-first`. Bilingual trigger set (English + Swedish, since user prompts mix both). Word-boundary regex, same pattern as R7.
+* `R8_TRIGGER_KEYWORDS` in `hooks/keywords.py`, sibling to `R7_TRIGGER_KEYWORDS`.
+* `analyze-routing-adherence.py` learns the R8 target (`mcp__temporal-future__temporal_future_query`) so adherence is measurable from day one.
+* `hooks/keywords.py` — single source-of-truth for `KEYWORD_TO_DOMAIN` (staleness MCP) and `R7_TRIGGER_KEYWORDS` / `R8_TRIGGER_KEYWORDS` (routing). Eliminates the silent two-list drift between Layers 3, 5, and 6.
 * `tests/test_adherence.py` — 17 unit tests covering `analyze-routing-adherence.py`. The first run surfaced a real `--since` filter bug (see Fixed).
+* `tests/test_routing.py` — 14 unit tests covering the rule engine including R7 word-boundary regression guards.
 * `analyze-routing-adherence.py --session-id` flag to filter records to a single session, useful for isolating concurrent runs.
 
 ### Changed
 
+* README rule count 6 → 8 (R7 + R8 added), R5 text reworded `extended-thinking-ok` → `write-longer-reasoning-prose` (the old advisory was unactionable). Layer 5 section added with payload example + schema expectations + env vars. Status banner updated: layers shipped is now `1, 3, 4, 5, 6`.
 * `templates/settings.json` hook timeouts corrected from `2` to `2000` (milliseconds). The old value caused every hook to time out immediately for adopters using the template verbatim.
-* README §3 routing description updated: "Six rules" → "Seven rules" (R7 was missing), R5 advisory text corrected from `extended-thinking-ok` to `write-longer-reasoning-prose`.
-* README expanded with sections on environment variables (`CLAUDE_KIT_STATE_DIR` and friends), CLI utilities (`analyze-routing-adherence.py`, `tests/test_temporal_lib.py`), and the time.sh-vs-custom-Layer-1 substitution note.
+* README expanded with sections on environment variables (`CLAUDE_KIT_STATE_DIR`, `KAIROS_TASKS_DB`, `CLAUDE_TRAINING_CUTOFF`, etc.), CLI utilities (`analyze-routing-adherence.py`, `tests/test_*.py`), and the time.sh-vs-custom-Layer-1 substitution note.
 * `mcp/temporal-pattern.py` now reuses `is_real_user_prompt` from `hooks/temporal_lib.py` via path-injected import (with inline fallback). Removes silent duplication.
 * MCP server docstrings: example registration paths changed from absolute `/root/.claude/mcp/...` to tilde-relative `~/.claude/mcp/...` so adopters can copy verbatim.
+* Layer 6 docstring: now lists eight rules.
 
 ### Fixed
 
 * R7 substring matching produced false positives: `"api"` matched inside `"rapid"`, `"new in"` matched inside `"knew in"`, etc. Trigger detection now uses a word-boundary regex (`\bapi\b`). True positives ("graphics api", "release notes for X") still fire; false positives no longer.
 * `analyze-routing-adherence.py --since` filter was silently broken. `datetime.fromisoformat("2026-05-01")` yields a timezone-naive datetime, comparison against the tracker's timezone-aware log timestamps raised `TypeError`, the broad `except Exception: pass` swallowed it, and the filter no-op'd without complaint. Naive `--since` values now normalize to UTC midnight; aware values pass through unchanged.
-
-## [0.3.0] - 2026-05-11
 
 ## [0.3.0] - 2026-05-11
 
