@@ -26,8 +26,8 @@ Pure stdlib. Newline-delimited JSON-RPC 2.0 over stdin/stdout.
 Registration in ~/.claude.json (project-scoped mcpServers):
     "temporal-pattern": {
       "type": "stdio",
-      "command": "/usr/bin/python3",
-      "args": ["/root/.claude/mcp/temporal-pattern.py"]
+      "command": "python3",
+      "args": ["~/.claude/mcp/temporal-pattern.py"]
     }
 """
 
