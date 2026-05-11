@@ -1,11 +1,28 @@
 # claude-kit
 
-Two small things that make Claude Code feel less stateless:
+Three small things that make Claude Code feel less stateless:
 
 1. **`hooks/time.sh`** — injects current server time on every user prompt so Claude has temporal cohesion across your messages. Without it, Claude sees all your messages as "now" and can't tell whether you replied in 10 seconds or 10 hours.
-2. **`hooks/statusline.sh`** — always-on status line showing host, load, memory, disk, uptime. Lives at the bottom of Claude Code. Useful for knowing what your machine is actually doing while you chat.
+2. **`hooks/temporal-state.py`** — sibling of `time.sh`. Where time.sh gives the raw timestamp, this one computes the *shape* of time and prepends it as a single-line summary: gap-since-last, cross-day status, time-of-day bucket, input-cadence (rapid-fire vs reflective vs resumed-after-gap), and session-phase (continuing vs interruption-pivot vs session-start). Lets Claude arrive at the prompt with computed temporal context already grounded instead of having to derive it each turn.
+3. **`hooks/statusline.sh`** — always-on status line showing host, load, memory, disk, uptime. Lives at the bottom of Claude Code. Useful for knowing what your machine is actually doing while you chat.
 
 That's the whole kit. Intentionally small.
+
+## Temporal state line
+
+```
+[temporal-state] gap=11h17m | cross-day=yes | now=02:02_CEST(late-night) | cadence=resumed-after-long-gap | phase=interruption-pivot
+```
+
+Parses the last 20 real user prompts from the current session JSONL (filtering out tool-results and task-notifications) and derives:
+
+- **gap**: seconds/minutes/hours since the previous user message
+- **cross-day**: did the local date change since the last message
+- **now**: current local time + bucket (`late-night` / `early-morning` / `morning` / `midday` / `afternoon` / `evening` / `night`)
+- **cadence**: `very-rapid-fire` / `rapid-fire` / `active-collaboration` / `reflective-pace` / `spaced-work` / `resumed-after-break` / `resumed-after-long-gap` / `session-start`
+- **phase**: `session-start` / `continuing` / `resumed-after-pause` / `resumed-after-overnight` / `interruption-pivot`
+
+Pure stdlib Python — no extra dependencies. Same task-notification filter as `time.sh`, so background-task completions don't trigger spurious refreshes.
 
 ## Status line
 
@@ -20,8 +37,8 @@ Refreshes every 5 seconds (configurable). No external dependencies beyond standa
 ```bash
 # 1. Copy the hooks
 mkdir -p ~/.claude/hooks
-cp hooks/time.sh hooks/statusline.sh ~/.claude/hooks/
-chmod +x ~/.claude/hooks/*.sh
+cp hooks/time.sh hooks/temporal-state.py hooks/statusline.sh ~/.claude/hooks/
+chmod +x ~/.claude/hooks/*.sh ~/.claude/hooks/*.py
 
 # 2. Merge the UserPromptSubmit entry and statusLine config from
 #    templates/settings.json into your ~/.claude/settings.json.
