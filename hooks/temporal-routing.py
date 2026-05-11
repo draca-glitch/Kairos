@@ -33,20 +33,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from temporal_lib import compute_state, is_task_notification, parse_payload
+from keywords import R7_TRIGGER_KEYWORDS as STALENESS_TRIGGER_KEYWORDS
 
 
 STATE_DIR = Path(os.environ.get("CLAUDE_KIT_STATE_DIR", str(Path.home() / ".claude" / "state")))
 STATE_FILE = STATE_DIR / "temporal-routing-state.json"
-
-# Keywords that trigger Layer 3 (staleness) routing. Kept narrow on purpose:
-# topics where 4+ months since training cutoff genuinely matters and where
-# the model otherwise tends to answer confidently from stale knowledge.
-STALENESS_TRIGGER_KEYWORDS = (
-    "api", "library", "framework", "package", "sdk", "cve",
-    "vulnerability", "vulnerab", "pricing", "price", "cost",
-    "model version", "latest version", "release notes",
-    "deprecat", "breaking change", "new in", "as of",
-)
 
 
 def evaluate_rules(state: dict) -> tuple[list[str], list[str], list[str]]:

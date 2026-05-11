@@ -38,6 +38,34 @@ import json
 import os
 import sys
 from datetime import date, datetime
+from pathlib import Path
+
+
+def _import_keyword_map():
+    """Reuse hooks/keywords.KEYWORD_TO_DOMAIN when reachable.
+
+    Falls through to the inline copy below if the hooks/ directory is not
+    on disk in any expected location (standalone MCP distribution).
+    """
+    here = Path(__file__).resolve().parent
+    candidates = [
+        here.parent / "hooks",
+        Path.home() / ".claude" / "hooks",
+        Path(os.environ.get("CLAUDE_KIT_HOOKS_DIR", "")),
+    ]
+    for c in candidates:
+        if c and (c / "keywords.py").exists():
+            if str(c) not in sys.path:
+                sys.path.insert(0, str(c))
+            try:
+                from keywords import KEYWORD_TO_DOMAIN as _shared
+                return _shared
+            except Exception:
+                continue
+    return None
+
+
+_SHARED_KEYWORD_MAP = _import_keyword_map()
 
 
 CUTOFF_STR = os.environ.get("CLAUDE_TRAINING_CUTOFF", "2026-01-01")
@@ -109,44 +137,22 @@ def infer_domain_from_topic(topic: str) -> str:
     only win when no time-sensitive match exists. Falls back to ''.
     """
     t = (topic or "").lower()
-    keyword_map = [
-        ("cve", "security"),
-        ("vulnerab", "security"),
-        ("exploit", "security"),
-        ("zero-day", "security"),
-        ("0day", "security"),
-        ("price", "pricing"),
-        ("pricing", "pricing"),
-        ("cost", "pricing"),
-        ("stock", "stocks"),
-        ("market", "markets"),
-        ("crypto", "crypto"),
-        ("bitcoin", "crypto"),
-        ("election", "politics"),
-        ("news", "news"),
-        ("law", "legal"),
-        ("statute", "legal"),
-        ("regulation", "regulation"),
-        ("medical", "medical"),
-        ("treatment", "medical"),
-        ("diagnos", "medical"),
-        ("drug", "medical"),
-        ("gpt-", "ai"),
-        ("claude", "ai"),
-        ("llm", "llm"),
-        ("model", "ai"),
-        ("library", "libraries"),
-        ("package", "libraries"),
-        ("framework", "framework"),
-        ("api", "api"),
-        ("software", "software"),
-        ("python", "software"),
-        ("node", "software"),
+    keyword_map = _SHARED_KEYWORD_MAP if _SHARED_KEYWORD_MAP is not None else [
+        # Inline fallback used only when hooks/keywords.py is unreachable.
+        # Kept in lockstep with hooks/keywords.py:KEYWORD_TO_DOMAIN.
+        ("cve", "security"), ("vulnerab", "security"), ("exploit", "security"),
+        ("zero-day", "security"), ("0day", "security"),
+        ("price", "pricing"), ("pricing", "pricing"), ("cost", "pricing"),
+        ("stock", "stocks"), ("market", "markets"),
+        ("crypto", "crypto"), ("bitcoin", "crypto"),
+        ("election", "politics"), ("news", "news"),
+        ("law", "legal"), ("statute", "legal"), ("regulation", "regulation"),
+        ("medical", "medical"), ("treatment", "medical"), ("diagnos", "medical"), ("drug", "medical"),
+        ("gpt-", "ai"), ("claude", "ai"), ("llm", "llm"), ("model", "ai"),
+        ("library", "libraries"), ("package", "libraries"), ("framework", "framework"),
+        ("api", "api"), ("software", "software"), ("python", "software"), ("node", "software"),
         ("react", "framework"),
-        ("history", "history"),
-        ("theorem", "math"),
-        ("proof", "math"),
-        ("equation", "math"),
+        ("history", "history"), ("theorem", "math"), ("proof", "math"), ("equation", "math"),
     ]
     matches = [dom for needle, dom in keyword_map if needle in t]
     if not matches:
