@@ -102,7 +102,12 @@ def normalize_domain(domain: str | None) -> str:
 
 
 def infer_domain_from_topic(topic: str) -> str:
-    """Best-effort domain inference from topic keywords. Falls back to ''."""
+    """Best-effort domain inference from topic keywords.
+
+    Scoring rule: collect ALL keyword matches, then pick the domain with the
+    SHORTEST half-life (most acute volatility). Ageless domains (half_life=None)
+    only win when no time-sensitive match exists. Falls back to ''.
+    """
     t = (topic or "").lower()
     keyword_map = [
         ("cve", "security"),
@@ -111,6 +116,8 @@ def infer_domain_from_topic(topic: str) -> str:
         ("zero-day", "security"),
         ("0day", "security"),
         ("price", "pricing"),
+        ("pricing", "pricing"),
+        ("cost", "pricing"),
         ("stock", "stocks"),
         ("market", "markets"),
         ("crypto", "crypto"),
@@ -141,10 +148,15 @@ def infer_domain_from_topic(topic: str) -> str:
         ("proof", "math"),
         ("equation", "math"),
     ]
-    for needle, dom in keyword_map:
-        if needle in t:
-            return dom
-    return ""
+    matches = [dom for needle, dom in keyword_map if needle in t]
+    if not matches:
+        return ""
+
+    def acuity(dom: str) -> float:
+        hl = DOMAIN_HALF_LIFE.get(dom)
+        return float("inf") if hl is None else float(hl)
+
+    return min(matches, key=acuity)
 
 
 def days_since_cutoff() -> int:

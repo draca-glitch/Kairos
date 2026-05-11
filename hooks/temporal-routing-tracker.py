@@ -60,6 +60,15 @@ def tool_name_from(payload: dict) -> str:
     )
 
 
+def session_id_from(payload: dict) -> str:
+    return (
+        payload.get("session_id")
+        or payload.get("sessionId")
+        or os.environ.get("CLAUDE_SESSION_ID")
+        or ""
+    )
+
+
 def read_state() -> dict:
     try:
         return json.loads(STATE_FILE.read_text())
@@ -74,6 +83,7 @@ def main() -> int:
 
     record = {
         "ts": datetime.now(timezone.utc).astimezone().isoformat(),
+        "session_id": session_id_from(payload),
         "tool": tool,
         "advisory_ts": state.get("ts"),
         "suggests": state.get("suggests") or [],
