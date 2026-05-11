@@ -21,8 +21,9 @@ Rules v0 (deterministic, no LLM):
   R2  cross-day=yes AND gap >= 4h                      → suggest memory_search-first; flag staleness
   R3  cadence in {rapid-fire, very-rapid-fire}         → skip TaskCreate-overhead, skip preamble
   R4  phase=session-start                              → suggest read-CLAUDE.md-first
-  R5  cadence=reflective-pace AND prompt_chars > 200   → suggest extended-thinking-ok
+  R5  cadence=reflective-pace AND prompt_chars > 200   → suggest write-longer-reasoning-prose
   R6  tod=late-night AND resumed-after-* cadence       → suggest confirm-before-destructive
+  R7  prompt mentions time-volatile-tech keywords      → suggest temporal_staleness_audit-first
 """
 
 import json
@@ -36,6 +37,16 @@ from temporal_lib import compute_state, is_task_notification, parse_payload
 
 STATE_DIR = Path(os.environ.get("CLAUDE_KIT_STATE_DIR", str(Path.home() / ".claude" / "state")))
 STATE_FILE = STATE_DIR / "temporal-routing-state.json"
+
+# Keywords that trigger Layer 3 (staleness) routing. Kept narrow on purpose:
+# topics where 4+ months since training cutoff genuinely matters and where
+# the model otherwise tends to answer confidently from stale knowledge.
+STALENESS_TRIGGER_KEYWORDS = (
+    "api", "library", "framework", "package", "sdk", "cve",
+    "vulnerability", "vulnerab", "pricing", "price", "cost",
+    "model version", "latest version", "release notes",
+    "deprecat", "breaking change", "new in", "as of",
+)
 
 
 def evaluate_rules(state: dict) -> tuple[list[str], list[str], list[str]]:
@@ -85,6 +96,14 @@ def evaluate_rules(state: dict) -> tuple[list[str], list[str], list[str]]:
     if tod == "late-night" and cadence in {"resumed-after-break", "resumed-after-long-gap"}:
         suggests.append("confirm-before-destructive")
         reasons.append(f"tod=late-night+{cadence}")
+
+    # R7: prompt mentions time-volatile tech topics → consult Layer 3
+    prompt_lower = (state.get("prompt_text") or "").lower()
+    if prompt_lower:
+        hit = next((kw for kw in STALENESS_TRIGGER_KEYWORDS if kw in prompt_lower), None)
+        if hit:
+            suggests.append("temporal_staleness_audit-first")
+            reasons.append(f"staleness-trigger={hit}")
 
     return suggests, skips, reasons
 
