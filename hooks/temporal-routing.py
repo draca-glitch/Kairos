@@ -71,9 +71,11 @@ def evaluate_rules(state: dict) -> tuple[list[str], list[str], list[str]]:
         suggests.append("read-CLAUDE.md-first")
         reasons.append("phase=session-start")
 
-    # R5: reflective + substantial prompt → extended thinking is welcome
+    # R5: reflective + substantial prompt → spend tokens on reasoning prose
+    # (extended-thinking is a request-level setting the model can't toggle,
+    # so the actionable advice is to write longer reasoning in the response).
     if cadence == "reflective-pace" and prompt_chars > 200:
-        suggests.append("extended-thinking-ok")
+        suggests.append("write-longer-reasoning-prose")
         reasons.append(f"reflective+chars={prompt_chars}")
 
     # R6: late-night resumption → confirmation posture
