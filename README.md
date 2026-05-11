@@ -149,6 +149,42 @@ chmod +x ~/.claude/hooks/*.sh ~/.claude/hooks/*.py ~/.claude/mcp/*.py
 
 Verify live: next message to Claude should arrive with something like `2026-04-17 23:55:18 CEST` prepended as a system reminder, and the status line should appear at the bottom of the UI.
 
+## CLI utilities
+
+### `analyze-routing-adherence.py`
+
+Reads the tracker's JSONL log and reports per-advisory adherence: when `skip=X` was in force, did the model avoid calling X? When `suggest=Y-first` was in force, did Y fire as the first tool call?
+
+```bash
+./analyze-routing-adherence.py                     # default log location
+./analyze-routing-adherence.py --since 2026-05-01  # window
+./analyze-routing-adherence.py --json              # machine-readable
+```
+
+Read-only. Closes the falsifiability claim: with this script, "Layer 6 shapes behavior" becomes a number, not a hypothesis.
+
+### `tests/test_temporal_lib.py`
+
+Table-driven unit tests over the classification primitives (cadence, phase, time-of-day, gap humanizer, prompt parsing). Hardens Layer 1+2 against regressions.
+
+```bash
+python3 -m unittest tests.test_temporal_lib
+```
+
+## Environment variables
+
+| Variable | Default | What |
+|---|---|---|
+| `CLAUDE_KIT_STATE_DIR` | `~/.claude/state/` | Where routing state file and tracker log live |
+| `CLAUDE_KIT_TRANSCRIPT_MAX_IDLE_SECONDS` | `14400` (4h) | How stale a transcript can be before fallback path gives up |
+| `CLAUDE_KIT_LOG_ROTATE_BYTES` | `10485760` (10 MB) | When tracker log rotates |
+| `CLAUDE_KIT_LOG_KEEP_ROTATIONS` | `3` | How many rotated logs to keep before deletion |
+| `CLAUDE_TRAINING_CUTOFF` | `2026-01-01` | Date staleness MCP measures elapsed days against |
+
+## time.sh vs. custom Layer-1 sources
+
+The kit ships `hooks/time.sh` as the default Layer 1 (present-moment grounding) hook: emits a full timestamp on first prompt of a session, then date-on-change thereafter (deduplicated, low-token). If your environment already provides a per-prompt timestamp via a different hook (for instance, a sibling script that prepends `HH:MM:SS` to every prompt), substitute it in `settings.json` instead of `time.sh`. All downstream temporal hooks (`temporal-state.py`, `temporal-routing.py`) only need an accurate session-aware clock somewhere in the chain; they don't depend on time.sh specifically. Just don't run two timestamp emitters in parallel.
+
 ## Why
 
 ### Time hook
