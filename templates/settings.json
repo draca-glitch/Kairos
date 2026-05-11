@@ -9,6 +9,11 @@
             "type": "command",
             "command": "~/.claude/hooks/time.sh",
             "timeout": 2
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/temporal-state.py",
+            "timeout": 2
           }
         ]
       }
