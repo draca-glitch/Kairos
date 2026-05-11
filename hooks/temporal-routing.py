@@ -36,7 +36,7 @@ STATE_FILE = Path("/root/work/temporal-routing-state.json")
 
 
 def evaluate_rules(state: dict) -> tuple[list[str], list[str], list[str]]:
-    """Return (suggests, skips, reasons) — empty lists when no rules fire."""
+    """Return (suggests, skips, reasons), empty lists when no rules fire."""
     suggests: list[str] = []
     skips: list[str] = []
     reasons: list[str] = []
