@@ -2,6 +2,8 @@
 
 > *kairos* (καιρός): the meaning-bearing moment, as distinct from *chronos* (Χρόνος), measured time. This kit is about the former: not "what does the clock say" but "what does the time *mean* for this turn".
 
+> **Status: work in progress.** Kairos is the public artifact accompanying the **Wedlund Temporal Theorem**, a research project by Mikael Wedlund on temporal cognition as a constitutive primitive of artificial intelligence. The kit is the substrate the theory is being tested against, not the final claim. Layers 1, 3, 4, and 6 ship today (v0.3.0); Layer 5 is unbuilt; the paper is unpublished. API is pre-1.0 and may change between minor versions. Companion project: [Mnemos](https://github.com/draca-glitch/mnemos) (memory layer).
+
 Small things that make Claude Code feel less stateless:
 
 1. **`hooks/time.sh`**: injects current server time on every user prompt so Claude has temporal cohesion across your messages. Without it, Claude sees all your messages as "now" and can't tell whether you replied in 10 seconds or 10 hours.
