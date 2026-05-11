@@ -8,17 +8,17 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/time.sh",
-            "timeout": 2
+            "timeout": 2000
           },
           {
             "type": "command",
             "command": "~/.claude/hooks/temporal-state.py",
-            "timeout": 2
+            "timeout": 2000
           },
           {
             "type": "command",
             "command": "~/.claude/hooks/temporal-routing.py",
-            "timeout": 2
+            "timeout": 2000
           }
         ]
       }
@@ -29,7 +29,7 @@
           {
             "type": "command",
             "command": "~/.claude/hooks/temporal-routing-tracker.py",
-            "timeout": 2
+            "timeout": 2000
           }
         ]
       }
