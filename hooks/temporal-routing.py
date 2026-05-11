@@ -28,6 +28,7 @@ Rules v0 (deterministic, no LLM):
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -38,6 +39,14 @@ from keywords import R7_TRIGGER_KEYWORDS as STALENESS_TRIGGER_KEYWORDS
 
 STATE_DIR = Path(os.environ.get("CLAUDE_KIT_STATE_DIR", str(Path.home() / ".claude" / "state")))
 STATE_FILE = STATE_DIR / "temporal-routing-state.json"
+
+# Word-boundary regex over R7 triggers. Substring matching incorrectly fired
+# on prompts like "rapid response" ("api" is inside "rapid") and "knew in
+# advance" ("new in" is inside "knew in"). \b anchors require the keyword to
+# appear as a free-standing token / phrase.
+STALENESS_TRIGGER_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(kw) for kw in STALENESS_TRIGGER_KEYWORDS) + r")\b"
+)
 
 
 def evaluate_rules(state: dict) -> tuple[list[str], list[str], list[str]]:
@@ -91,10 +100,10 @@ def evaluate_rules(state: dict) -> tuple[list[str], list[str], list[str]]:
     # R7: prompt mentions time-volatile tech topics → consult Layer 3
     prompt_lower = (state.get("prompt_text") or "").lower()
     if prompt_lower:
-        hit = next((kw for kw in STALENESS_TRIGGER_KEYWORDS if kw in prompt_lower), None)
-        if hit:
+        m = STALENESS_TRIGGER_RE.search(prompt_lower)
+        if m:
             suggests.append("temporal_staleness_audit-first")
-            reasons.append(f"staleness-trigger={hit}")
+            reasons.append(f"staleness-trigger={m.group(0)}")
 
     return suggests, skips, reasons
 
