@@ -13,7 +13,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -162,7 +162,9 @@ class TestLoadLog(unittest.TestCase):
             _rec(ts="2026-05-10T10:00:00+02:00", tool="A"),
             _rec(ts="2026-05-11T10:00:00+02:00", tool="B"),
         ])
-        out = adherence.load_log(path, since=datetime(2026, 5, 11), session_id=None)
+        out = adherence.load_log(
+            path, since=datetime(2026, 5, 11, tzinfo=timezone.utc), session_id=None
+        )
         self.assertEqual([r["tool"] for r in out], ["B"])
 
     def test_corrupt_lines_skipped(self):
