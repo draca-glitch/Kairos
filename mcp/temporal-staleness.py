@@ -48,7 +48,7 @@ except Exception:
 
 
 # Domain volatility: half-life in days. None = ageless (knowledge does
-# not decay materially with time). Values are deliberately conservative —
+# not decay materially with time). Values are deliberately conservative,
 # Claude should err on the side of qualifying rather than overclaiming.
 DOMAIN_HALF_LIFE = {
     "general": None,
@@ -176,14 +176,14 @@ def assess(topic: str, domain_in: str | None) -> dict:
             suggestion = "proceed"
             rationale = (
                 f"{days}d since training cutoff vs {half_life}d domain half-life "
-                f"(ratio {ratio:.2f}) — well within freshness window."
+                f"(ratio {ratio:.2f}), well within freshness window."
             )
         elif ratio < 2.0:
             risk = "medium"
             suggestion = "qualify"
             rationale = (
                 f"{days}d since training cutoff vs {half_life}d domain half-life "
-                f"(ratio {ratio:.2f}) — qualify answer with 'as of training cutoff' and "
+                f"(ratio {ratio:.2f}), qualify answer with 'as of training cutoff' and "
                 f"note possible drift."
             )
         else:
@@ -191,7 +191,7 @@ def assess(topic: str, domain_in: str | None) -> dict:
             suggestion = "web_search"
             rationale = (
                 f"{days}d since training cutoff vs {half_life}d domain half-life "
-                f"(ratio {ratio:.2f}) — likely stale; verify with web search before answering."
+                f"(ratio {ratio:.2f}), likely stale; verify with web search before answering."
             )
 
     return {

@@ -3,14 +3,14 @@
 UserPromptSubmit hook: emit a one-line temporal-state summary so Claude
 arrives at the prompt with computed temporal context already grounded.
 
-Sibling to hooks/time.sh — time.sh gives raw timestamp, temporal-state
+Sibling to hooks/time.sh, time.sh gives raw timestamp, temporal-state
 gives the *shape* of time: gap-since-last, cross-day status, time-of-day
 bucket, input-cadence, session-phase.
 
 Output format (single line, low-token):
   [temporal-state] gap=11h17m | cross-day=yes | now=02:02_CEST(late-night) | cadence=resumed-after-long-gap | phase=interruption-pivot
 
-Logic lives in temporal_lib.py — this hook is just the renderer.
+Logic lives in temporal_lib.py, this hook is just the renderer.
 
 Usage in settings.json:
   "UserPromptSubmit": [{

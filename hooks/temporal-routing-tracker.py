@@ -25,7 +25,7 @@ Offline analysis can group tool sequences by (advisory_ts, prompt-turn)
 and compute: did `memory_search` happen before other tools when
 suggest=memory_search-first was in force? Etc.
 
-Failure modes are silent — the tracker must never block tool execution.
+Failure modes are silent, the tracker must never block tool execution.
 """
 
 import json
