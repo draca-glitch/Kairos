@@ -1,12 +1,48 @@
 # claude-kit
 
-Three small things that make Claude Code feel less stateless:
+Four small things that make Claude Code feel less stateless:
 
 1. **`hooks/time.sh`** — injects current server time on every user prompt so Claude has temporal cohesion across your messages. Without it, Claude sees all your messages as "now" and can't tell whether you replied in 10 seconds or 10 hours.
 2. **`hooks/temporal-state.py`** — sibling of `time.sh`. Where time.sh gives the raw timestamp, this one computes the *shape* of time and prepends it as a single-line summary: gap-since-last, cross-day status, time-of-day bucket, input-cadence (rapid-fire vs reflective vs resumed-after-gap), and session-phase (continuing vs interruption-pivot vs session-start). Lets Claude arrive at the prompt with computed temporal context already grounded instead of having to derive it each turn.
-3. **`hooks/statusline.sh`** — always-on status line showing host, load, memory, disk, uptime. Lives at the bottom of Claude Code. Useful for knowing what your machine is actually doing while you chat.
+3. **`mcp/temporal-pattern.py`** — MCP server exposing `temporal_pattern_query` tool. Where `time.sh` and `temporal-state.py` tell Claude about *this moment*, this one lets Claude query the user's *baseline pattern* across all recorded sessions: hour-of-day activity heatmap, session durations, between-session gaps, and a current-state-vs-baseline comparison. Lets Claude calibrate pacing/tone against your real rhythm, not heuristics.
+4. **`hooks/statusline.sh`** — always-on status line showing host, load, memory, disk, uptime. Lives at the bottom of Claude Code. Useful for knowing what your machine is actually doing while you chat.
 
 That's the whole kit. Intentionally small.
+
+## Temporal pattern MCP
+
+```
+$ python3 mcp/temporal-pattern.py current_state_vs_baseline
+{
+  "data": {
+    "now": "2026-05-11 16:09 CEST",
+    "current_hour": 16,
+    "current_dow": "Mon",
+    "activity_at_this_hour": {
+      "share_of_total": 0.034,
+      "ratio_vs_uniform": 0.82,
+      "interpretation": "below-typical"
+    },
+    "activity_on_this_dow": {
+      "share_of_total": 0.19,
+      "ratio_vs_uniform": 1.33,
+      "interpretation": "typical-or-busier"
+    },
+    "gap_since_last_prompt_min": 1.8,
+    "total_prompts_in_window": 3012
+  }
+}
+```
+
+Six metrics:
+- `overview` — summary
+- `heatmap_hour` — hour-of-day activity buckets
+- `heatmap_dow` — day-of-week activity buckets
+- `session_durations` — minute distribution (min/p25/median/p75/p90/max)
+- `gap_distribution` — between-session gap distribution
+- `current_state_vs_baseline` — now vs historical for this hour/dow
+
+Pure stdlib. Registered as `temporal-pattern` MCP server in `~/.claude.json`. Activates per-session.
 
 ## Temporal state line
 
