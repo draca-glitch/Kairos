@@ -25,7 +25,7 @@ import json
 import os
 import sys
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -141,6 +141,8 @@ def main() -> int:
     if args.since:
         try:
             since = datetime.fromisoformat(args.since)
+            if since.tzinfo is None:
+                since = since.replace(tzinfo=timezone.utc)
         except Exception:
             print(f"invalid --since: {args.since}", file=sys.stderr)
             return 2
