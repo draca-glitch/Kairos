@@ -1,4 +1,4 @@
-# kairos
+# Kairos
 
 > *kairos* (καιρός): the meaning-bearing moment, as distinct from *chronos* (Χρόνος), measured time. This kit is about the former: not "what does the clock say" but "what does the time *mean* for this turn".
 
