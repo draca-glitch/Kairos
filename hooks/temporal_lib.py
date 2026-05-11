@@ -89,6 +89,7 @@ def collect_user_prompt_timestamps(transcript: Path, limit: int = 20) -> list[da
                 timestamps.append(dt)
     except FileNotFoundError:
         return []
+    timestamps.sort()
     return timestamps[-limit:]
 
 
