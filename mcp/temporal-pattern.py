@@ -3,7 +3,7 @@
 MCP server: temporal_pattern_query.
 
 Lets Claude query the user's actual temporal activity patterns derived
-from session transcripts. Sibling to claude-kit's hooks/temporal-state.py
+from session transcripts. Sibling to kairos's hooks/temporal-state.py
 — that one tells Claude what's happening *right now*, this one tells
 Claude what the user's pattern *usually* looks like, so pacing/tone
 decisions can be made against a baseline rather than heuristics.

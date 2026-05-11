@@ -1,5 +1,5 @@
 """
-Shared temporal-state primitives for claude-kit hooks.
+Shared temporal-state primitives for kairos hooks.
 
 Used by:
   - temporal-state.py  (emits [temporal-state] summary line)

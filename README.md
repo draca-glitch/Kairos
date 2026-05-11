@@ -1,4 +1,6 @@
-# claude-kit
+# kairos
+
+> *kairos* (καιρός): the meaning-bearing moment, as distinct from *chronos* (Χρόνος), measured time. This kit is about the former: not "what does the clock say" but "what does the time *mean* for this turn".
 
 Small things that make Claude Code feel less stateless:
 
