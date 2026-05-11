@@ -17,6 +17,7 @@ Usage:
   ./analyze-routing-adherence.py
   ./analyze-routing-adherence.py --log /custom/path.jsonl
   ./analyze-routing-adherence.py --since 2026-05-01
+  ./analyze-routing-adherence.py --session-id <uuid>
 """
 
 import argparse
@@ -49,7 +50,7 @@ SUGGEST_TO_TOOL_PREFIX = {
 }
 
 
-def load_log(path: Path, since: datetime | None) -> list[dict]:
+def load_log(path: Path, since: datetime | None, session_id: str | None) -> list[dict]:
     if not path.exists():
         return []
     records: list[dict] = []
@@ -66,6 +67,8 @@ def load_log(path: Path, since: datetime | None) -> list[dict]:
                         continue
                 except Exception:
                     pass
+            if session_id and (r.get("session_id") or "") != session_id:
+                continue
             records.append(r)
     return records
 
@@ -129,6 +132,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--log", type=Path, default=DEFAULT_LOG)
     parser.add_argument("--since", type=str, default=None, help="ISO date, e.g. 2026-05-01")
+    parser.add_argument("--session-id", dest="session_id", type=str, default=None,
+                        help="filter records to a single session (matches tracker's session_id field)")
     parser.add_argument("--json", action="store_true", help="emit machine-readable JSON")
     args = parser.parse_args()
 
@@ -140,9 +145,12 @@ def main() -> int:
             print(f"invalid --since: {args.since}", file=sys.stderr)
             return 2
 
-    records = load_log(args.log, since)
+    records = load_log(args.log, since, args.session_id)
     if not records:
-        print(f"no records in {args.log}", file=sys.stderr)
+        msg = f"no records in {args.log}"
+        if args.session_id:
+            msg += f" (session_id={args.session_id})"
+        print(msg, file=sys.stderr)
         return 0
 
     turns = group_turns(records)
@@ -152,6 +160,7 @@ def main() -> int:
     if args.json:
         print(json.dumps({
             "log": str(args.log),
+            "session_id": args.session_id,
             "records": len(records),
             "turns": len(turns),
             "skip_adherence": dict(skip_stats),
@@ -160,6 +169,8 @@ def main() -> int:
         return 0
 
     print(f"log: {args.log}")
+    if args.session_id:
+        print(f"session_id filter: {args.session_id}")
     print(f"records: {len(records)}   turns: {len(turns)}")
     print(render_table("skip-adherence (was the tool avoided when skip=X was in force?)", skip_stats))
     print(render_table("suggest-first-adherence (did suggested tool fire FIRST in the turn?)", suggest_stats))
