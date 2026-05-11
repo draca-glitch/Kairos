@@ -39,6 +39,25 @@ from pathlib import Path
 STATE_DIR = Path(os.environ.get("CLAUDE_KIT_STATE_DIR", str(Path.home() / ".claude" / "state")))
 STATE_FILE = STATE_DIR / "temporal-routing-state.json"
 LOG_FILE = STATE_DIR / "temporal-routing-log.jsonl"
+LOG_ROTATE_BYTES = int(os.environ.get("CLAUDE_KIT_LOG_ROTATE_BYTES", str(10 * 1024 * 1024)))
+LOG_KEEP_ROTATIONS = int(os.environ.get("CLAUDE_KIT_LOG_KEEP_ROTATIONS", "3"))
+
+
+def rotate_if_oversized() -> None:
+    try:
+        if not LOG_FILE.exists() or LOG_FILE.stat().st_size < LOG_ROTATE_BYTES:
+            return
+        for i in range(LOG_KEEP_ROTATIONS, 0, -1):
+            src = LOG_FILE.with_suffix(LOG_FILE.suffix + f".{i}")
+            dst = LOG_FILE.with_suffix(LOG_FILE.suffix + f".{i + 1}")
+            if src.exists():
+                if i == LOG_KEEP_ROTATIONS:
+                    src.unlink()
+                else:
+                    src.rename(dst)
+        LOG_FILE.rename(LOG_FILE.with_suffix(LOG_FILE.suffix + ".1"))
+    except Exception:
+        pass
 
 
 def read_payload() -> dict:
@@ -97,6 +116,7 @@ def main() -> int:
 
     try:
         LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        rotate_if_oversized()
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
     except Exception:
