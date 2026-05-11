@@ -6,7 +6,26 @@ The kit is pre-1.0: minor bumps may include incompatible changes when the cost o
 
 ## [Unreleased]
 
-Nothing yet. v0.3.0 just shipped.
+### Added
+
+* `hooks/keywords.py` — single source-of-truth for `KEYWORD_TO_DOMAIN` (staleness MCP) and `R7_TRIGGER_KEYWORDS` (routing R7). Eliminates the silent two-list drift between Layers 3 and 6.
+* `tests/test_adherence.py` — 17 unit tests covering `analyze-routing-adherence.py`. The first run surfaced a real `--since` filter bug (see Fixed).
+* `analyze-routing-adherence.py --session-id` flag to filter records to a single session, useful for isolating concurrent runs.
+
+### Changed
+
+* `templates/settings.json` hook timeouts corrected from `2` to `2000` (milliseconds). The old value caused every hook to time out immediately for adopters using the template verbatim.
+* README §3 routing description updated: "Six rules" → "Seven rules" (R7 was missing), R5 advisory text corrected from `extended-thinking-ok` to `write-longer-reasoning-prose`.
+* README expanded with sections on environment variables (`CLAUDE_KIT_STATE_DIR` and friends), CLI utilities (`analyze-routing-adherence.py`, `tests/test_temporal_lib.py`), and the time.sh-vs-custom-Layer-1 substitution note.
+* `mcp/temporal-pattern.py` now reuses `is_real_user_prompt` from `hooks/temporal_lib.py` via path-injected import (with inline fallback). Removes silent duplication.
+* MCP server docstrings: example registration paths changed from absolute `/root/.claude/mcp/...` to tilde-relative `~/.claude/mcp/...` so adopters can copy verbatim.
+
+### Fixed
+
+* R7 substring matching produced false positives: `"api"` matched inside `"rapid"`, `"new in"` matched inside `"knew in"`, etc. Trigger detection now uses a word-boundary regex (`\bapi\b`). True positives ("graphics api", "release notes for X") still fire; false positives no longer.
+* `analyze-routing-adherence.py --since` filter was silently broken. `datetime.fromisoformat("2026-05-01")` yields a timezone-naive datetime, comparison against the tracker's timezone-aware log timestamps raised `TypeError`, the broad `except Exception: pass` swallowed it, and the filter no-op'd without complaint. Naive `--since` values now normalize to UTC midnight; aware values pass through unchanged.
+
+## [0.3.0] - 2026-05-11
 
 ## [0.3.0] - 2026-05-11
 
