@@ -24,6 +24,7 @@ Rules v0 (deterministic, no LLM):
   R5  cadence=reflective-pace AND prompt_chars > 200   → suggest write-longer-reasoning-prose
   R6  tod=late-night AND resumed-after-* cadence       → suggest confirm-before-destructive
   R7  prompt mentions time-volatile-tech keywords      → suggest temporal_staleness_audit-first
+  R8  prompt mentions forward-time concepts            → suggest temporal_future_query-first
 """
 
 import json
@@ -34,18 +35,24 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from temporal_lib import compute_state, is_task_notification, parse_payload
-from keywords import R7_TRIGGER_KEYWORDS as STALENESS_TRIGGER_KEYWORDS
+from keywords import (
+    R7_TRIGGER_KEYWORDS as STALENESS_TRIGGER_KEYWORDS,
+    R8_TRIGGER_KEYWORDS as FUTURE_TRIGGER_KEYWORDS,
+)
 
 
 STATE_DIR = Path(os.environ.get("CLAUDE_KIT_STATE_DIR", str(Path.home() / ".claude" / "state")))
 STATE_FILE = STATE_DIR / "temporal-routing-state.json"
 
-# Word-boundary regex over R7 triggers. Substring matching incorrectly fired
-# on prompts like "rapid response" ("api" is inside "rapid") and "knew in
-# advance" ("new in" is inside "knew in"). \b anchors require the keyword to
-# appear as a free-standing token / phrase.
+# Word-boundary regexes over the R7 and R8 trigger sets. Substring matching
+# incorrectly fires on common substrings ("api" inside "rapid", "new in"
+# inside "knew in"); \b anchors require each keyword to appear as a free-
+# standing token or phrase.
 STALENESS_TRIGGER_RE = re.compile(
     r"\b(?:" + "|".join(re.escape(kw) for kw in STALENESS_TRIGGER_KEYWORDS) + r")\b"
+)
+FUTURE_TRIGGER_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(kw) for kw in FUTURE_TRIGGER_KEYWORDS) + r")\b"
 )
 
 
@@ -104,6 +111,13 @@ def evaluate_rules(state: dict) -> tuple[list[str], list[str], list[str]]:
         if m:
             suggests.append("temporal_staleness_audit-first")
             reasons.append(f"staleness-trigger={m.group(0)}")
+
+    # R8: prompt mentions forward-time concepts → consult Layer 5
+    if prompt_lower:
+        m = FUTURE_TRIGGER_RE.search(prompt_lower)
+        if m:
+            suggests.append("temporal_future_query-first")
+            reasons.append(f"future-trigger={m.group(0)}")
 
     return suggests, skips, reasons
 
