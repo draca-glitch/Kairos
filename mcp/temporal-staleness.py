@@ -29,8 +29,8 @@ Pure stdlib. Newline-delimited JSON-RPC 2.0 over stdin/stdout.
 Registration in ~/.claude.json (mcpServers):
     "temporal-staleness": {
       "type": "stdio",
-      "command": "/usr/bin/python3",
-      "args": ["/root/.claude/mcp/temporal-staleness.py"]
+      "command": "python3",
+      "args": ["~/.claude/mcp/temporal-staleness.py"]
     }
 """
 
