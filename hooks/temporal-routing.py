@@ -11,9 +11,10 @@ silent when no rule fires so Claude isn't nudged when nothing matters.
 Output format:
   [temporal-routing] suggest=memory_search-first,read-CLAUDE.md-first | skip=TaskCreate-overhead | reason=gap=18m,phase=session-start
 
-Side effect: writes /root/work/temporal-routing-state.json with the
+Side effect: writes <STATE_DIR>/temporal-routing-state.json with the
 current advisory so the post-tool-use tracker can match tool calls
 against the advisory in force when they were made (falsifiability log).
+STATE_DIR defaults to ~/.claude/state/, override via CLAUDE_KIT_STATE_DIR.
 
 Rules v0 (deterministic, no LLM):
   R1  gap >= 30m                                       → suggest memory_search-first
@@ -25,6 +26,7 @@ Rules v0 (deterministic, no LLM):
 """
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -32,7 +34,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from temporal_lib import compute_state, is_task_notification, parse_payload
 
 
-STATE_FILE = Path("/root/work/temporal-routing-state.json")
+STATE_DIR = Path(os.environ.get("CLAUDE_KIT_STATE_DIR", str(Path.home() / ".claude" / "state")))
+STATE_FILE = STATE_DIR / "temporal-routing-state.json"
 
 
 def evaluate_rules(state: dict) -> tuple[list[str], list[str], list[str]]:
