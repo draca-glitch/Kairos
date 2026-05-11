@@ -4,10 +4,11 @@ Layer 6 falsifiability tracker: PostToolUse hook that records every tool
 call alongside the temporal-routing advisory in force at the time, so
 adherence statistics can be computed offline.
 
-Reads /root/work/temporal-routing-state.json (written by
+Reads <STATE_DIR>/temporal-routing-state.json (written by
 temporal-routing.py at UserPromptSubmit time) to know the current
 advisory. Appends one JSONL record per tool call to
-/root/work/temporal-routing-log.jsonl.
+<STATE_DIR>/temporal-routing-log.jsonl. STATE_DIR defaults to
+~/.claude/state/, override via CLAUDE_KIT_STATE_DIR.
 
 Record schema:
   {
@@ -35,8 +36,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-STATE_FILE = Path("/root/work/temporal-routing-state.json")
-LOG_FILE = Path("/root/work/temporal-routing-log.jsonl")
+STATE_DIR = Path(os.environ.get("CLAUDE_KIT_STATE_DIR", str(Path.home() / ".claude" / "state")))
+STATE_FILE = STATE_DIR / "temporal-routing-state.json"
+LOG_FILE = STATE_DIR / "temporal-routing-log.jsonl"
 
 
 def read_payload() -> dict:
