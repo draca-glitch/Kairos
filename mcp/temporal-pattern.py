@@ -424,10 +424,10 @@ def main():
                 continue
             try:
                 result = tool_temporal_pattern_query(tool_args)
-                _send({
-                    "jsonrpc": "2.0", "id": id_,
-                    "result": {"content": [{"type": "text", "text": json.dumps(result)}]},
-                })
+                envelope = {"content": [{"type": "text", "text": json.dumps(result)}]}
+                if isinstance(result, dict) and "error" in result:
+                    envelope["isError"] = True
+                _send({"jsonrpc": "2.0", "id": id_, "result": envelope})
             except Exception as e:
                 _send({
                     "jsonrpc": "2.0", "id": id_,
