@@ -13,8 +13,6 @@ Small things that make Claude Code feel less stateless:
 5. **`mcp/temporal-pattern.py`**: MCP server exposing `temporal_pattern_query` tool. Where `time.sh` and `temporal-state.py` tell Claude about *this moment*, this one lets Claude query the user's *baseline pattern* across all recorded sessions: hour-of-day activity heatmap, session durations, between-session gaps, and a current-state-vs-baseline comparison. Lets Claude calibrate pacing/tone against your real rhythm, not heuristics.
 6. **`mcp/temporal-staleness.py`**: MCP server exposing `temporal_staleness_audit` tool. Given a topic + optional domain, returns a stale-risk assessment (`low/medium/high`) based on time-since-training-cutoff and domain-volatility table (tech: 90d half-life, news: 7d, security/CVE: 30d, etc.). Tells Claude when to web-search vs proceed vs qualify.
 7. **`mcp/temporal-future.py`**: Layer 5. MCP server exposing `temporal_future_query` and `temporal_obligations_for` tools. Reads the agent's task database and Mnemos memory store and returns overdue / due-today / upcoming items plus expiring memories within a horizon (default 7 days), with a `highlights` list of one-liners the model should pay attention to. Lets Claude anticipate what's coming, not just describe what's now.
-8. **`hooks/statusline.sh`**: always-on status line showing host, load, memory, disk, uptime. Lives at the bottom of Claude Code. Useful for knowing what your machine is actually doing while you chat.
-
 That's the whole kit. Intentionally small, deliberately layered: each piece names *which layer of temporal cognition* it provides (1: present-moment, 3: self-staleness, 4: other-temporal-modeling, 5: future-orientation, 6: meta-tool-routing) in the six-layer model.
 
 ## Temporal pattern MCP
@@ -156,25 +154,17 @@ Schema expectations:
 
 The `highlights` list is the model's quick-attention layer: one-liners like `"3 task(s) due TODAY"`, `"23 overdue (4 high-priority)"`, `"next: <title> in 6d (area)"`, `"M memory(ies) expiring in window"`. Designed to fit in a thinking budget so the model can absorb forward-state without parsing the structured payload.
 
-## Status line
-
-```
-user@host | load 0.42 | mem 15G/63G | disk 82% | up 7d
-```
-
-Refreshes every 5 seconds (configurable). No external dependencies beyond standard coreutils (`awk`, `free`, `df`, `uptime` via `/proc`). Works on any Linux; macOS users will need to adjust `free` → `vm_stat` parsing.
-
 ## Quick start
 
 ```bash
 # 1. Copy the hooks
 mkdir -p ~/.claude/hooks ~/.claude/mcp
-cp hooks/time.sh hooks/statusline.sh ~/.claude/hooks/
+cp hooks/time.sh ~/.claude/hooks/
 cp hooks/temporal_lib.py hooks/temporal-state.py hooks/temporal-routing.py hooks/temporal-routing-tracker.py ~/.claude/hooks/
 cp mcp/temporal-pattern.py mcp/temporal-staleness.py mcp/temporal-future.py ~/.claude/mcp/
 chmod +x ~/.claude/hooks/*.sh ~/.claude/hooks/*.py ~/.claude/mcp/*.py
 
-# 2. Merge the UserPromptSubmit, PostToolUse, and statusLine entries from
+# 2. Merge the UserPromptSubmit and PostToolUse entries from
 #    templates/settings.json into your ~/.claude/settings.json. Register the
 #    temporal-pattern, temporal-staleness, and temporal-future MCP
 #    servers in ~/.claude.json.
@@ -183,7 +173,7 @@ chmod +x ~/.claude/hooks/*.sh ~/.claude/hooks/*.py ~/.claude/mcp/*.py
 # 3. Restart Claude Code or open /hooks once so the watcher picks it up.
 ```
 
-Verify live: next message to Claude should arrive with something like `2026-04-17 23:55:18 CEST` prepended as a system reminder, and the status line should appear at the bottom of the UI.
+Verify live: next message to Claude should arrive with something like `2026-04-17 23:55:18 CEST` prepended as a system reminder.
 
 ## CLI utilities
 
@@ -307,32 +297,6 @@ Without temporal cognition, every causal claim an LLM produces is indistinguisha
 This is the root of a specific, well-documented LLM failure mode: **confabulating causal explanations**. When asked *"why did X happen?"* the model produces a plausible-sounding causal story. Sometimes the story is correct because the pattern was well-represented in training. Sometimes it's wrong because the model is surface-matching on causal syntax without the ability to independently verify cause-precedes-effect in the specific instance. Without temporal cognition the model cannot distinguish between *"I'm explaining real causation"* and *"I'm producing causal-shaped text."*
 
 This escalates the thesis of this repository from quality-of-life patch to something sharper: **AI cannot do genuine causal reasoning without temporal cognition as a first-class primitive, and causal reasoning is a substantial fraction of what we actually want AI to do.** Debugging, medicine, science, economics, history, planning, consequences of decisions, all require causality, all require time. A hook that injects the current timestamp looks small because it *is* small. What it patches is not.
-
-### Status line
-
-Sometimes you want to know if your server is about to OOM in the middle of a build without alt-tabbing. Visible at a glance, updates every 5 seconds, zero extra cost (the script runs locally, not through the model).
-
-### Status line, Windows variant
-
-`hooks/statusline-windows.sh` + `hooks/statusline.ps1` is a paired Windows-native version. Run Claude Code in Git Bash or WSL, use the bash wrapper as the `statusLine` command, and the PowerShell sidecar does the actual system-info queries (CPU load, memory, disk, uptime, TCP connection count).
-
-PowerShell process spawn is ~200-500ms on Windows, which would visibly drag the status line if called on every redraw. The bash wrapper caches PS output to `~/.claude/.statusline_cache` with a 30-second TTL, fresh enough to matter, cheap enough to hide the spawn cost.
-
-Install:
-
-```bash
-# From within Git Bash or WSL
-mkdir -p ~/.claude/hooks
-cp hooks/statusline-windows.sh ~/.claude/hooks/statusline.sh
-cp hooks/statusline.ps1        ~/.claude/hooks/statusline.ps1
-chmod +x ~/.claude/hooks/statusline.sh
-```
-
-Then point `settings.json` at `~/.claude/hooks/statusline.sh` the same way as the Linux version. Hostname defaults to `$COMPUTERNAME`; override by exporting `CLAUDE_HOST_LABEL` if you want a custom display name.
-
-## Companion
-
-- **[claude-hud](https://github.com/jarrodwatts/claude-hud)**: richer status bar plugin with live view of current tool calls, token usage, and session context. Runs alongside or replaces `statusline.sh`. Enable via `enabledPlugins`.
 
 ## License
 
