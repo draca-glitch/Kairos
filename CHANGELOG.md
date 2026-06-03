@@ -6,14 +6,16 @@ The kit is pre-1.0: minor bumps may include incompatible changes when the cost o
 
 ## [Unreleased]
 
+Next probable: a controlled with-vs-without-Kairos benchmark on time-shaped reasoning tasks to upgrade the paper's "constitutive" claim from architectural assertion to measured outcome.
+
+## [0.5.0] - 2026-06-03 (Routing-to-injection migration)
+
 ### Added
 - `hooks/future-state.py`: Layer 5 future-orientation delivered as **injection** instead of routing. Emits an ambient `[obligations]` line (overdue / due-today / next item / expiring memories) on UserPromptSubmit, reusing the temporal-future MCP's query logic (single source of truth). The gate is actual state (something overdue or due today), not keywords, so it is immune to the false-positive disease that gave R8 ~0% adherence; forward-time keywords in the prompt merely widen the gate to include upcoming-within-horizon items. 10 tests. Rationale: measured adherence showed that prescriptive "call this tool first" routing does not drive behavior even when the tool has real data behind it, whereas orienting injection (the Layer 1 mechanism) delivers the same signal without requiring compliance.
 
 ### Changed
 - `analyze-routing-adherence.py`: suggest-adherence is now a three-way split (first / late / not-fired) instead of binary followed/violated. The old "fired first" bar scored a turn where the suggested tool ran second identically to one where it never ran, conflating "adhered, just not first" with "ignored" and understating real adherence. Legacy `followed`/`violated` keys are retained (followed == fired-first) so existing callers and tests are unaffected. On the current corpus this surfaces that read-CLAUDE.md-first adherence is ~26% (fired at all) versus 5% (strict first), while temporal_future_query-first remains a genuine 0/0/N. Three tests added.
 - `hooks/temporal-routing.py`: R8 (`temporal_future_query-first`) demoted to logged-only. It still fires in `evaluate_rules` and is written to the routing state file so the adherence tracker keeps measuring it, but it is suppressed from the emitted `[temporal-routing]` line. R8 measured ~0% adherence and Layer 5 is now delivered by injection (`future-state.py`), so the advisory was redundant live noise. Env-overridable via `KAIROS_LOGGED_ONLY_SUGGESTS`. Three tests added.
-
-Next probable: a controlled with-vs-without-Kairos benchmark on time-shaped reasoning tasks to upgrade the paper's "constitutive" claim from architectural assertion to measured outcome.
 
 ## [0.4.0] - 2026-05-11
 
