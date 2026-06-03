@@ -25,6 +25,10 @@ Rules v0 (deterministic, no LLM):
   R6  tod=late-night AND resumed-after-* cadence       → suggest confirm-before-destructive
   R7  prompt mentions time-volatile-tech keywords      → suggest temporal_staleness_audit-first
   R8  prompt mentions forward-time concepts            → suggest temporal_future_query-first
+      (LOGGED-ONLY since 2026-06-03: still written to the state file so the
+      adherence tracker keeps measuring it, but suppressed from the emitted
+      line. R8 measured ~0% adherence; Layer 5's signal is now delivered by
+      injection via future-state.py, not by routing the model to a tool.)
 """
 
 import json
@@ -43,6 +47,18 @@ from keywords import (
 
 STATE_DIR = Path(os.environ.get("CLAUDE_KIT_STATE_DIR", str(Path.home() / ".claude" / "state")))
 STATE_FILE = STATE_DIR / "temporal-routing-state.json"
+
+# Advisories demoted to logged-only: still written to the state file so the
+# adherence tracker keeps measuring them (the paper's data stream), but
+# suppressed from the emitted [temporal-routing] line so they stop injecting
+# live noise. temporal_future_query-first was demoted 2026-06-03 after it
+# measured ~0% adherence; Layer 5's signal is now delivered by injection
+# (future-state.py), not by routing the model to call a tool.
+LOGGED_ONLY_SUGGESTS = {
+    s.strip()
+    for s in os.environ.get("KAIROS_LOGGED_ONLY_SUGGESTS", "temporal_future_query-first").split(",")
+    if s.strip()
+}
 
 # Word-boundary regexes over the R7 and R8 trigger sets. Substring matching
 # incorrectly fires on common substrings ("api" inside "rapid", "new in"
@@ -133,6 +149,16 @@ def render_line(suggests: list[str], skips: list[str], reasons: list[str]) -> st
     return "[temporal-routing] " + " | ".join(parts)
 
 
+def visible_advisories(suggests: list[str], reasons: list[str]) -> tuple[list[str], list[str]]:
+    """Drop logged-only advisories (and the reason that only explains them)
+    from what gets emitted. The full set still goes to the state file."""
+    vs = [s for s in suggests if s not in LOGGED_ONLY_SUGGESTS]
+    vr = reasons
+    if "temporal_future_query-first" in LOGGED_ONLY_SUGGESTS:
+        vr = [r for r in reasons if not r.startswith("future-trigger=")]
+    return vs, vr
+
+
 def write_state_file(state: dict, suggests: list[str], skips: list[str], reasons: list[str]) -> None:
     try:
         STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -161,10 +187,14 @@ def main() -> int:
 
     write_state_file(state, suggests, skips, reasons)
 
-    if not suggests and not skips:
+    # State file keeps the full advisory set (adherence logging); the emitted
+    # line drops logged-only advisories so they stop injecting as live noise.
+    visible_suggests, visible_reasons = visible_advisories(suggests, reasons)
+
+    if not visible_suggests and not skips:
         return 0
 
-    print(render_line(suggests, skips, reasons))
+    print(render_line(visible_suggests, skips, visible_reasons))
     return 0
 
 
