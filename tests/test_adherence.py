@@ -134,6 +134,33 @@ class TestAnalyzeSuggestsFirst(unittest.TestCase):
         stats = adherence.analyze_suggests_first(turns)
         self.assertEqual(stats["temporal_staleness_audit-first"]["followed"], 1)
 
+    def test_suggest_followed_late_when_target_not_first(self):
+        turns = {"A": [
+            _rec(suggests=["memory_search-first"], tool="Bash"),
+            _rec(suggests=["memory_search-first"], tool="mcp__agent-memory__memory_search"),
+        ]}
+        stats = adherence.analyze_suggests_first(turns)
+        self.assertEqual(stats["memory_search-first"]["followed_first"], 0)
+        self.assertEqual(stats["memory_search-first"]["followed_late"], 1)
+        self.assertEqual(stats["memory_search-first"]["not_fired"], 0)
+
+    def test_suggest_not_fired_when_target_absent(self):
+        turns = {"A": [
+            _rec(suggests=["memory_search-first"], tool="Bash"),
+            _rec(suggests=["memory_search-first"], tool="Read"),
+        ]}
+        stats = adherence.analyze_suggests_first(turns)
+        self.assertEqual(stats["memory_search-first"]["not_fired"], 1)
+        self.assertEqual(stats["memory_search-first"]["followed_late"], 0)
+        self.assertEqual(stats["memory_search-first"]["violated"], 1)
+
+    def test_suggest_legacy_keys_preserved(self):
+        # followed == fired-first, violated == late + not_fired
+        turns = {"A": [_rec(suggests=["memory_search-first"], tool="mcp__agent-memory__memory_search")]}
+        stats = adherence.analyze_suggests_first(turns)
+        self.assertEqual(stats["memory_search-first"]["followed_first"], 1)
+        self.assertEqual(stats["memory_search-first"]["followed"], 1)
+
 
 class TestLoadLog(unittest.TestCase):
     def _write_log(self, records):
