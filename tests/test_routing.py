@@ -111,5 +111,29 @@ class TestRulesR1ToR6(unittest.TestCase):
         self.assertEqual(skips, [])
 
 
+class TestLoggedOnlyDemotion(unittest.TestCase):
+    def test_r8_still_evaluated_for_state_file(self):
+        # R8 must still fire in evaluate_rules so the tracker/state file keeps
+        # measuring it; only the emitted line suppresses it.
+        suggests, _, reasons = routing.evaluate_rules(_state("any upcoming deadline"))
+        self.assertIn("temporal_future_query-first", suggests)
+        self.assertTrue(any(r.startswith("future-trigger=") for r in reasons))
+
+    def test_visible_drops_demoted_suggest_and_its_reason(self):
+        suggests = ["memory_search-first", "temporal_future_query-first"]
+        reasons = ["gap=31m", "future-trigger=upcoming"]
+        vs, vr = routing.visible_advisories(suggests, reasons)
+        self.assertIn("memory_search-first", vs)
+        self.assertNotIn("temporal_future_query-first", vs)
+        self.assertEqual(vr, ["gap=31m"])
+
+    def test_visible_passes_non_demoted_through(self):
+        suggests = ["memory_search-first", "read-CLAUDE.md-first"]
+        reasons = ["gap=31m", "phase=session-start"]
+        vs, vr = routing.visible_advisories(suggests, reasons)
+        self.assertEqual(vs, suggests)
+        self.assertEqual(vr, reasons)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

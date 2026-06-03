@@ -11,6 +11,7 @@ The kit is pre-1.0: minor bumps may include incompatible changes when the cost o
 
 ### Changed
 - `analyze-routing-adherence.py`: suggest-adherence is now a three-way split (first / late / not-fired) instead of binary followed/violated. The old "fired first" bar scored a turn where the suggested tool ran second identically to one where it never ran, conflating "adhered, just not first" with "ignored" and understating real adherence. Legacy `followed`/`violated` keys are retained (followed == fired-first) so existing callers and tests are unaffected. On the current corpus this surfaces that read-CLAUDE.md-first adherence is ~26% (fired at all) versus 5% (strict first), while temporal_future_query-first remains a genuine 0/0/N. Three tests added.
+- `hooks/temporal-routing.py`: R8 (`temporal_future_query-first`) demoted to logged-only. It still fires in `evaluate_rules` and is written to the routing state file so the adherence tracker keeps measuring it, but it is suppressed from the emitted `[temporal-routing]` line. R8 measured ~0% adherence and Layer 5 is now delivered by injection (`future-state.py`), so the advisory was redundant live noise. Env-overridable via `KAIROS_LOGGED_ONLY_SUGGESTS`. Three tests added.
 
 Next probable: a controlled with-vs-without-Kairos benchmark on time-shaped reasoning tasks to upgrade the paper's "constitutive" claim from architectural assertion to measured outcome.
 
