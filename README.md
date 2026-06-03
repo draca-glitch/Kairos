@@ -143,14 +143,14 @@ $ # via MCP, args = {"horizon_days": 7}
 }
 ```
 
-MCP server exposing `temporal_future_query(horizon_days=7)` and `temporal_obligations_for(area, horizon_days=7)`. Reads task and memory databases directly (paths via `KAIROS_TASKS_DB` and `KAIROS_MEMORY_DB`, defaults `~/work/tasks.db` and `~/work/memory.db`). If a database does not exist on disk, that source reports `{available: false}` and the rest of the query still returns — adopters without a tasks system still get expiring-memory queries, and adopters without memory still get task queries.
+MCP server exposing `temporal_future_query(horizon_days=7)` and `temporal_obligations_for(area, horizon_days=7)`. Reads task and memory databases directly (paths via `KAIROS_TASKS_DB` and `KAIROS_MEMORY_DB`, defaults `~/work/tasks.db` and `~/work/memory.db`). If a database does not exist on disk, that source reports `{available: false}` and the rest of the query still returns; adopters without a tasks system still get expiring-memory queries, and adopters without memory still get task queries.
 
 Schema expectations:
 
 | DB | Table | Required fields |
 |---|---|---|
 | tasks | `tasks` | `id`, `title`, `area`, `priority` (`high`/`medium`/`low`), `status` (`open`/`done`/`cancelled`), `due_date` (ISO date or NULL) |
-| memory | `memories` | `id`, `content`, `status`, `valid_until` (ISO date or NULL) — Mnemos schema |
+| memory | `memories` | `id`, `content`, `status`, `valid_until` (ISO date or NULL), Mnemos schema |
 
 The `highlights` list is the model's quick-attention layer: one-liners like `"3 task(s) due TODAY"`, `"23 overdue (4 high-priority)"`, `"next: <title> in 6d (area)"`, `"M memory(ies) expiring in window"`. Designed to fit in a thinking budget so the model can absorb forward-state without parsing the structured payload.
 
