@@ -3,19 +3,19 @@
 MCP server: temporal_pattern_query.
 
 Lets Claude query the user's actual temporal activity patterns derived
-from session transcripts. Sibling to kairos's hooks/temporal-state.py
-— that one tells Claude what's happening *right now*, this one tells
+from session transcripts. Sibling to kairos's hooks/temporal-state.py:
+that one tells Claude what's happening *right now*, this one tells
 Claude what the user's pattern *usually* looks like, so pacing/tone
 decisions can be made against a baseline rather than heuristics.
 
 Tool: temporal_pattern_query
   metric:
-    overview                  — summary: session count, date range, peak hours, current state
-    heatmap_hour              — activity counts bucketed 0-23 (UTC-local converted)
-    heatmap_dow               — activity counts bucketed by day of week
-    session_durations         — distribution of session length in minutes
-    gap_distribution          — distribution of gaps between sessions
-    current_state_vs_baseline — now vs historical baseline for this hour/dow
+    overview                  - summary: session count, date range, peak hours, current state
+    heatmap_hour              - activity counts bucketed 0-23 (UTC-local converted)
+    heatmap_dow               - activity counts bucketed by day of week
+    session_durations         - distribution of session length in minutes
+    gap_distribution          - distribution of gaps between sessions
+    current_state_vs_baseline - now vs historical baseline for this hour/dow
   days_back (default 60): look-back window
 
 Reads ~/.claude/projects/-<cwd>/*.jsonl (or any path under
