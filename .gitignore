@@ -5,3 +5,7 @@
 node_modules/
 __pycache__/
 *.pyc
+.pytest_cache/
+
+# Local agent instructions, not part of the package
+CLAUDE.md
