@@ -2,7 +2,7 @@
 
 > *kairos* (καιρός): the meaning-bearing moment, as distinct from *chronos* (Χρόνος), measured time. This kit is about the former: not "what does the clock say" but "what does the time *mean* for this turn".
 
-> **Status: work in progress.** Kairos is the public artifact accompanying the **Wedlund Temporal Theorem**, a research project by Mikael Wedlund on temporal cognition as a constitutive primitive of artificial intelligence. The kit is the substrate the theory is being tested against, not the final claim. Layers 1, 3, 4, 5, and 6 ship today (v0.4.0); Layer 2 is provided by the companion [Mnemos](https://github.com/draca-glitch/mnemos) memory project; the paper is unpublished. API is pre-1.0 and may change between minor versions.
+> **Status: work in progress.** Kairos is the public artifact accompanying the **Wedlund Temporal Theorem**, a research project by Mikael Wedlund on temporal cognition as a constitutive primitive of artificial intelligence. The kit is the substrate the theory is being tested against, not the final claim. Layers 1, 3, 4, 5, and 6 ship today (v0.5.0); Layer 2 is provided by the companion [Mnemos](https://github.com/draca-glitch/mnemos) memory project; the paper is unpublished. API is pre-1.0 and may change between minor versions.
 
 Small things that make Claude Code feel less stateless:
 
