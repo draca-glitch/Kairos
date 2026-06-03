@@ -8,8 +8,17 @@ tracker recorded which tools the model actually called during that turn.
 
 This script joins the two streams and answers, per advisory class:
   - When skip=X was in force, how often did the model still call X?
-  - When suggest=Y-first was in force, did Y actually fire before any
-    other tool in the turn?
+  - When suggest=Y-first was in force, did Y fire first, fire late
+    (somewhere in the turn but not first), or never fire at all?
+
+The three-way suggest split de-conflates "followed but not literally
+first" from "never followed", which a single followed/violated bar
+wrongly merges into one failure bucket. A turn where the suggested tool
+ran second (after, say, a memory_search) is adherence in spirit; scoring
+it identically to a turn where the tool never ran makes the raw rate read
+worse than reality. The residual not-fired bucket still blends genuine
+false-positive advisories (correctly ignored) with genuinely-missed ones;
+separating those needs a judgment layer over turn context, not the log.
 
 Output: a table to stdout. Exit 0 always (read-only).
 
@@ -101,19 +110,42 @@ def analyze_skips(turns: dict[str, list[dict]]) -> dict[str, dict]:
 
 
 def analyze_suggests_first(turns: dict[str, list[dict]]) -> dict[str, dict]:
-    stats: dict[str, dict] = defaultdict(lambda: {"turns": 0, "violated": 0, "followed": 0})
+    """Three-way split per suggest advisory.
+
+    followed_first : suggested tool was the first tool call in the turn
+    followed_late  : it fired somewhere in the turn but not first
+    not_fired      : it never fired
+
+    The followed/violated keys are retained with their original meaning
+    (followed == fired-first) so existing callers and tests are unaffected.
+    The split exists because a single followed/violated bar scores a turn
+    where the tool ran second identically to one where it never ran, which
+    conflates "adhered, just not literally first" with "ignored" and makes
+    the raw rate read worse than reality.
+    """
+    stats: dict[str, dict] = defaultdict(
+        lambda: {"turns": 0, "violated": 0, "followed": 0,
+                 "followed_first": 0, "followed_late": 0, "not_fired": 0}
+    )
     for adv, calls in turns.items():
         if not calls:
             continue
         suggests = calls[0].get("suggests") or []
+        tools = [(c.get("tool") or "") for c in calls]
         for sug in suggests:
             target = SUGGEST_TO_TOOL_PREFIX.get(sug)
             if target is None:
                 continue
-            stats[sug]["turns"] += 1
-            first_tool = (calls[0].get("tool") or "")
-            followed = first_tool.startswith(target)
-            stats[sug]["followed" if followed else "violated"] += 1
+            s = stats[sug]
+            s["turns"] += 1
+            if tools[0].startswith(target):
+                s["followed_first"] += 1
+            elif any(t.startswith(target) for t in tools):
+                s["followed_late"] += 1
+            else:
+                s["not_fired"] += 1
+            s["followed"] = s["followed_first"]
+            s["violated"] = s["followed_late"] + s["not_fired"]
     return stats
 
 
@@ -126,6 +158,23 @@ def render_table(title: str, stats: dict[str, dict]) -> str:
     for adv, s in sorted(stats.items()):
         rate = s["followed"] / s["turns"] if s["turns"] else 0
         out.append(f"  {adv:40s} {s['turns']:>7d} {s['followed']:>10d} {s['violated']:>10d} {rate*100:>6.1f}%")
+    return "\n".join(out) + "\n"
+
+
+def render_suggest_table(title: str, stats: dict[str, dict]) -> str:
+    if not stats:
+        return f"\n{title}\n  (no advisories of this class observed)\n"
+    out = [f"\n{title}"]
+    out.append(f"  {'advisory':40s} {'turns':>6s} {'first':>6s} {'late':>6s} {'none':>6s} {'first%':>8s} {'any%':>7s}")
+    out.append("  " + "-" * 92)
+    for adv, s in sorted(stats.items()):
+        t = s["turns"]
+        first = s.get("followed_first", s["followed"])
+        late = s.get("followed_late", 0)
+        none = s.get("not_fired", s["violated"])
+        first_pct = first / t * 100 if t else 0
+        any_pct = (first + late) / t * 100 if t else 0
+        out.append(f"  {adv:40s} {t:>6d} {first:>6d} {late:>6d} {none:>6d} {first_pct:>7.1f}% {any_pct:>6.1f}%")
     return "\n".join(out) + "\n"
 
 
@@ -176,7 +225,9 @@ def main() -> int:
         print(f"session_id filter: {args.session_id}")
     print(f"records: {len(records)}   turns: {len(turns)}")
     print(render_table("skip-adherence (was the tool avoided when skip=X was in force?)", skip_stats))
-    print(render_table("suggest-first-adherence (did suggested tool fire FIRST in the turn?)", suggest_stats))
+    print(render_suggest_table(
+        "suggest-adherence (first=fired first · late=fired but not first · none=never fired; "
+        "first%=old strict rate, any%=fired at all)", suggest_stats))
     return 0
 
 
