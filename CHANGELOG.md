@@ -8,6 +8,16 @@ The kit is pre-1.0: minor bumps may include incompatible changes when the cost o
 
 Next probable: a controlled with-vs-without-Kairos benchmark on time-shaped reasoning tasks to upgrade the paper's "constitutive" claim from architectural assertion to measured outcome.
 
+## [0.6.0] - 2026-06-10 (Layer 3 injection; session-clean adherence data)
+
+### Added
+- `hooks/staleness-state.py`: Layer 3 self-staleness delivered as **injection**, completing the migration 0.5.0 started for Layer 5. When the prompt mentions a time-volatile topic (the R7 trigger set, word-boundary matched) the hook runs the temporal-staleness audit in-process (reusing the MCP module, single source of truth) and injects one line, e.g. `[staleness] 'api' risk=high (160d since cutoff, 14d half-life): web_search`. The gate is keyword AND risk: low-risk verdicts stay silent, so fresh domains cost nothing, and keyword false positives are harmless because the line orients rather than commands. Domain inference receives a context window around the matched keyword, not the bare keyword. 5 tests.
+
+### Changed
+- `hooks/temporal-routing.py`: R7 (`temporal_staleness_audit-first`) demoted to logged-only, same treatment and same rationale as R8 in 0.5.0: measured adherence 0% fired-first / 7.7% fired-at-all. Still evaluated and written to the state file for continued measurement; suppressed from the emitted line. The logged-only reason stripping is now table-driven (`SUGGEST_REASON_PREFIX`) instead of hardcoded per advisory.
+- **Session-scoped advisory attribution.** The routing state file now records the `session_id` of the prompt that produced the advisory; the PostToolUse tracker drops advisory fields (and marks `advisory_dropped: foreign-session`) when the tool call's session does not match, and `analyze-routing-adherence.py` groups turns by `(session_id, advisory_ts)`. Previously, with concurrent sessions, one session's tool calls were attributed to the other session's advisory through the shared global state file, interleaving two sessions' calls into one "turn" and corrupting first-tool adherence. Pre-fix log records without a session_id degrade to the old behavior. 3 tests.
+- `hooks/future-state.py`: the `[obligations]` "next:" picker now surfaces the most actionable obligation (due today, else nearest upcoming whenever the horizon has one, else the most RECENTLY missed overdue task) instead of falling back to the most overdue. The old picker headlined the maximally-stale task forever (a 337-day-dead work order on the production box) while hiding the obligation actually nearest in time. Widening still only controls whether upcoming-only state produces a line at all. 2 tests.
+
 ## [0.5.0] - 2026-06-03 (Routing-to-injection migration)
 
 ### Added

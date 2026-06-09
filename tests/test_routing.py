@@ -127,6 +127,18 @@ class TestLoggedOnlyDemotion(unittest.TestCase):
         self.assertNotIn("temporal_future_query-first", vs)
         self.assertEqual(vr, ["gap=31m"])
 
+    def test_visible_drops_demoted_staleness_and_its_reason(self):
+        suggests = ["memory_search-first", "temporal_staleness_audit-first"]
+        reasons = ["gap=31m", "staleness-trigger=api"]
+        vs, vr = routing.visible_advisories(suggests, reasons)
+        self.assertNotIn("temporal_staleness_audit-first", vs)
+        self.assertEqual(vr, ["gap=31m"])
+
+    def test_r7_still_evaluated_for_state_file(self):
+        suggests, _, reasons = routing.evaluate_rules(_state("how do I use this api"))
+        self.assertIn("temporal_staleness_audit-first", suggests)
+        self.assertTrue(any(r.startswith("staleness-trigger=") for r in reasons))
+
     def test_visible_passes_non_demoted_through(self):
         suggests = ["memory_search-first", "read-CLAUDE.md-first"]
         reasons = ["gap=31m", "phase=session-start"]

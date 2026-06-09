@@ -51,13 +51,25 @@ STATE_FILE = STATE_DIR / "temporal-routing-state.json"
 # Advisories demoted to logged-only: still written to the state file so the
 # adherence tracker keeps measuring them (the paper's data stream), but
 # suppressed from the emitted [temporal-routing] line so they stop injecting
-# live noise. temporal_future_query-first was demoted 2026-06-03 after it
-# measured ~0% adherence; Layer 5's signal is now delivered by injection
-# (future-state.py), not by routing the model to call a tool.
+# live noise. temporal_future_query-first was demoted 2026-06-03 (~0%
+# adherence; Layer 5 delivered by injection via future-state.py since).
+# temporal_staleness_audit-first was demoted 2026-06-10 for the same measured
+# failure (0% first, 7.7% any); Layer 3 is delivered by injection via
+# staleness-state.py since.
 LOGGED_ONLY_SUGGESTS = {
     s.strip()
-    for s in os.environ.get("KAIROS_LOGGED_ONLY_SUGGESTS", "temporal_future_query-first").split(",")
+    for s in os.environ.get(
+        "KAIROS_LOGGED_ONLY_SUGGESTS",
+        "temporal_future_query-first,temporal_staleness_audit-first",
+    ).split(",")
     if s.strip()
+}
+
+# Reason prefixes that exist only to explain a particular suggest; stripped
+# from the emitted line when their advisory is logged-only.
+SUGGEST_REASON_PREFIX = {
+    "temporal_future_query-first": "future-trigger=",
+    "temporal_staleness_audit-first": "staleness-trigger=",
 }
 
 # Word-boundary regexes over the R7 and R8 trigger sets. Substring matching
@@ -153,17 +165,21 @@ def visible_advisories(suggests: list[str], reasons: list[str]) -> tuple[list[st
     """Drop logged-only advisories (and the reason that only explains them)
     from what gets emitted. The full set still goes to the state file."""
     vs = [s for s in suggests if s not in LOGGED_ONLY_SUGGESTS]
-    vr = reasons
-    if "temporal_future_query-first" in LOGGED_ONLY_SUGGESTS:
-        vr = [r for r in reasons if not r.startswith("future-trigger=")]
+    hidden_prefixes = tuple(
+        prefix for sug, prefix in SUGGEST_REASON_PREFIX.items()
+        if sug in LOGGED_ONLY_SUGGESTS
+    )
+    vr = [r for r in reasons if not r.startswith(hidden_prefixes)] if hidden_prefixes else reasons
     return vs, vr
 
 
-def write_state_file(state: dict, suggests: list[str], skips: list[str], reasons: list[str]) -> None:
+def write_state_file(state: dict, suggests: list[str], skips: list[str], reasons: list[str],
+                     session_id: str = "") -> None:
     try:
         STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
         STATE_FILE.write_text(json.dumps({
             "ts": state["now_local"].isoformat(),
+            "session_id": session_id,
             "gap_str": state.get("gap_str"),
             "cadence": state.get("cadence"),
             "phase": state.get("phase"),
@@ -185,7 +201,8 @@ def main() -> int:
     state = compute_state(payload)
     suggests, skips, reasons = evaluate_rules(state)
 
-    write_state_file(state, suggests, skips, reasons)
+    session_id = payload.get("session_id") or payload.get("sessionId") or ""
+    write_state_file(state, suggests, skips, reasons, session_id)
 
     # State file keeps the full advisory set (adherence logging); the emitted
     # line drops logged-only advisories so they stop injecting as live noise.

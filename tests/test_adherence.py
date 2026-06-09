@@ -51,12 +51,24 @@ class TestGroupTurns(unittest.TestCase):
         ]
         turns = adherence.group_turns(records)
         self.assertEqual(len(turns), 2)
-        self.assertEqual(len(turns["A"]), 2)
-        self.assertEqual(len(turns["B"]), 1)
+        self.assertEqual(len(turns["s1|A"]), 2)
+        self.assertEqual(len(turns["s1|B"]), 1)
+
+    def test_concurrent_sessions_not_merged(self):
+        # Same advisory_ts seen from two sessions (global state file race)
+        # must form two turns, not one interleaved corruption.
+        records = [
+            _rec(advisory_ts="A", tool="Read", session_id="s1"),
+            _rec(advisory_ts="A", tool="Bash", session_id="s2"),
+        ]
+        turns = adherence.group_turns(records)
+        self.assertEqual(len(turns), 2)
+        self.assertEqual(len(turns["s1|A"]), 1)
+        self.assertEqual(len(turns["s2|A"]), 1)
 
     def test_missing_advisory_bucketed(self):
         turns = adherence.group_turns([_rec(advisory_ts=None)])
-        self.assertIn("<no-advisory>", turns)
+        self.assertIn("s1|<no-advisory>", turns)
 
     def test_calls_sorted_by_ts(self):
         records = [
@@ -65,7 +77,7 @@ class TestGroupTurns(unittest.TestCase):
             _rec(advisory_ts="A", ts="2026-05-11T19:00:20+02:00", tool="M"),
         ]
         turns = adherence.group_turns(records)
-        order = [c["tool"] for c in turns["A"]]
+        order = [c["tool"] for c in turns["s1|A"]]
         self.assertEqual(order, ["A", "M", "B"])
 
 
