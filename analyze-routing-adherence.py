@@ -84,12 +84,20 @@ def load_log(path: Path, since: datetime | None, session_id: str | None) -> list
 
 
 def group_turns(records: list[dict]) -> dict[str, list[dict]]:
+    """Group tool calls into prompt-turns keyed by (session_id, advisory_ts).
+
+    advisory_ts alone is ambiguous with concurrent sessions: two sessions can
+    interleave tool calls against the same globally-written advisory, and a
+    merged group corrupts the 'first tool in turn' computation. Records from
+    pre-session-id logs (no session_id field) degrade to the old behavior.
+    """
     turns: dict[str, list[dict]] = defaultdict(list)
     for r in records:
         adv = r.get("advisory_ts") or "<no-advisory>"
-        turns[adv].append(r)
-    for adv in turns:
-        turns[adv].sort(key=lambda r: r.get("ts", ""))
+        key = f"{r.get('session_id') or ''}|{adv}"
+        turns[key].append(r)
+    for key in turns:
+        turns[key].sort(key=lambda r: r.get("ts", ""))
     return turns
 
 

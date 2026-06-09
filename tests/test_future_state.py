@@ -68,9 +68,21 @@ def test_unavailable_tasks_is_silent():
     assert fs.render({"tasks": {"available": False}}, widened=False) is None
 
 
-def test_overdue_next_uses_most_overdue():
-    line = fs.render(_result(overdue=2), widened=False)
-    assert "30d overdue" in line
+def test_overdue_next_uses_least_stale():
+    r = _result(overdue=2)
+    r["tasks"]["overdue"] = [
+        {"title": "ancient", "area": "iss", "priority": "low", "days_until": -337},
+        {"title": "fresh-miss", "area": "brf", "priority": "high", "days_until": -2},
+    ]
+    line = fs.render(r, widened=False)
+    assert "next: 'fresh-miss' 2d overdue" in line
+    assert "ancient" not in line
+
+
+def test_upcoming_preferred_over_overdue_even_unwidened():
+    line = fs.render(_result(overdue=2, upcoming=1), widened=False)
+    assert "next: 'up' in 2d" in line
+    assert "overdue" in line  # counts still lead the line
 
 
 def test_forward_keywords_match():

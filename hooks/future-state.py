@@ -88,14 +88,20 @@ def render(result: dict, widened: bool) -> str | None:
     if due_today:
         parts.append(f"{due_today} due today")
 
+    # "next" means the most actionable obligation, not the oldest debt:
+    # due-today, else the nearest upcoming (whenever the horizon has one,
+    # widened or not; widening only controls whether upcoming-only state
+    # produces a line at all), else the most RECENTLY missed overdue task.
+    # The previous picker fell back to the MOST overdue, which headlines a
+    # long-dead task forever and buries the obligation actually nearest.
     nxt, when = None, None
     if tasks.get("due_today"):
         nxt, when = tasks["due_today"][0], "today"
-    elif widened and tasks.get("upcoming"):
+    elif tasks.get("upcoming"):
         nxt = tasks["upcoming"][0]
         when = f"in {nxt.get('days_until')}d"
     elif tasks.get("overdue"):
-        nxt = tasks["overdue"][0]  # most overdue (ORDER BY due_date ASC)
+        nxt = tasks["overdue"][-1]  # least stale (ORDER BY due_date ASC)
         when = f"{abs(nxt.get('days_until') or 0)}d overdue"
     if nxt:
         title = (nxt.get("title") or "")[:50]

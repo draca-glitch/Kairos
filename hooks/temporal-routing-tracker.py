@@ -101,10 +101,21 @@ def main() -> int:
     payload = read_payload()
     tool = tool_name_from(payload)
     state = read_state()
+    session_id = session_id_from(payload)
+
+    # The state file is global; with concurrent sessions the advisory in it
+    # may belong to another session's prompt. Attributing this tool call to
+    # that foreign advisory would contaminate the adherence statistics, so
+    # the advisory fields are dropped (the call itself is still logged).
+    # Back-compat: state files without session_id are trusted as before.
+    advisory_session = state.get("session_id")
+    foreign = bool(advisory_session and session_id and advisory_session != session_id)
+    if foreign:
+        state = {}
 
     record = {
         "ts": datetime.now(timezone.utc).astimezone().isoformat(),
-        "session_id": session_id_from(payload),
+        "session_id": session_id,
         "tool": tool,
         "advisory_ts": state.get("ts"),
         "suggests": state.get("suggests") or [],
@@ -113,6 +124,8 @@ def main() -> int:
         "phase": state.get("phase"),
         "gap_str": state.get("gap_str"),
     }
+    if foreign:
+        record["advisory_dropped"] = "foreign-session"
 
     try:
         LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
