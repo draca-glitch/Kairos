@@ -9,3 +9,6 @@ __pycache__/
 
 # Local agent instructions, not part of the package
 CLAUDE.md
+
+# Paper stays local-only, never synced to GitHub (Mikael 2026-07-25)
+papers/
