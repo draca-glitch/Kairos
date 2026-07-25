@@ -236,6 +236,17 @@ def main() -> int:
     print(render_suggest_table(
         "suggest-adherence (first=fired first · late=fired but not first · none=never fired; "
         "first%=old strict rate, any%=fired at all)", suggest_stats))
+    injection_satisfied = {
+        "temporal_future_query-first": "future-state.py injects [obligations] every prompt (since v0.6.0 era)",
+        "temporal_staleness_audit-first": "Layer 3 staleness injection shipped v0.6.0, R7 demoted same commit",
+    }
+    flagged = [a for a in injection_satisfied if a in suggest_stats]
+    if flagged:
+        print("\nNOTE — injection-satisfied advisories (tool-call rate measures an obsolete pathway):")
+        for a in flagged:
+            print(f"  {a}: {injection_satisfied[a]}")
+        print("  Low rates here are NOT non-adherence: the data these tools fetch is already injected")
+        print("  into context each prompt. Interpret as evidence for injection-over-instruction (§6).")
     return 0
 
 
