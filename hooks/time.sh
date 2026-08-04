@@ -49,8 +49,9 @@ TODAY=$(date '+%Y-%m-%d')
 LAST_DATE=$(cat "$MARKER" 2>/dev/null || echo "")
 
 if [ "$TODAY" != "$LAST_DATE" ]; then
-    # First fire of session, or date crossed since last fire: full datetime.
-    date '+%Y-%m-%d %H:%M:%S %Z'
+    # First fire of session, or date crossed since last fire: full datetime
+    # with weekday (LC_TIME=C pins English abbreviations across locales).
+    LC_TIME=C date '+%a %Y-%m-%d %H:%M:%S %Z'
     echo "$TODAY" > "$MARKER"
 else
     # Same date as previous fire: time only.

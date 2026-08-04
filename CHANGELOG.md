@@ -6,6 +6,9 @@ The kit is pre-1.0: minor bumps may include incompatible changes when the cost o
 
 ## [Unreleased]
 
+### Added
+- Weekday in Layer 1 injections. `temporal_lib.compute_state` now prefixes `now_str` with a deterministic English weekday abbreviation (`now=Tue_21:17_CEST(evening)`), via a fixed `DOW` tuple rather than locale-dependent `%a`. `hooks/time.sh` includes the weekday in its full-datetime form (`LC_TIME=C date '+%a %Y-%m-%d %H:%M:%S %Z'`). Motivated by a production incident (2026-08-04) where the assistant carried an off-by-one weekday label across three days of conversation; the injected timestamps contained dates but no weekday names, so the mislabeling had no ground truth to collide with. Grain coverage lesson for the paper: a temporal grain the model must derive (date to weekday) is a grain the injection layer should supply. 3 tests.
+
 Next probable: a controlled with-vs-without-Kairos benchmark on time-shaped reasoning tasks to upgrade the paper's "constitutive" claim from architectural assertion to measured outcome.
 
 ## [0.6.0] - 2026-06-10 (Layer 3 injection; session-clean adherence data)

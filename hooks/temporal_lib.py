@@ -25,6 +25,10 @@ TRANSCRIPT_MAX_IDLE_SECONDS = int(
     os.environ.get("CLAUDE_KIT_TRANSCRIPT_MAX_IDLE_SECONDS", "14400")
 )
 
+# Fixed English tuple; strftime %a is locale-dependent and the injected line
+# must be stable for downstream parsing regardless of server locale.
+DOW = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+
 
 def parse_payload(raw: str) -> dict:
     try:
@@ -175,7 +179,7 @@ def compute_state(payload: dict | None = None) -> dict:
         "prompts_count": 0,
         "now_utc": now_utc,
         "now_local": now_local,
-        "now_str": now_local.strftime("%H:%M_%Z"),
+        "now_str": f"{DOW[now_local.weekday()]}_{now_local.strftime('%H:%M_%Z')}",
         "tod": tod_bucket(now_local),
         "gap_seconds": None,
         "gap_str": None,

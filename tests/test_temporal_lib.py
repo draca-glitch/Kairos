@@ -164,5 +164,32 @@ class TestIsRealUserPrompt(unittest.TestCase):
         self.assertFalse(is_real_user_prompt(e))
 
 
+class TestNowStrWeekday(unittest.TestCase):
+    """now_str carries a deterministic English weekday prefix (added after a
+    production off-by-one weekday incident 2026-08-04: dates without weekday
+    names gave the model no ground truth to check its own day-labeling)."""
+
+    def test_now_str_format(self):
+        import re
+        from temporal_lib import compute_state
+        state = compute_state({})
+        self.assertRegex(
+            state["now_str"],
+            r"^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)_\d{2}:\d{2}_\S+$",
+        )
+
+    def test_now_str_weekday_matches_local_date(self):
+        from temporal_lib import compute_state, DOW
+        state = compute_state({})
+        expected = DOW[state["now_local"].weekday()]
+        self.assertTrue(state["now_str"].startswith(expected + "_"))
+
+    def test_dow_tuple_is_locale_independent(self):
+        from temporal_lib import DOW
+        self.assertEqual(len(DOW), 7)
+        self.assertEqual(DOW[0], "Mon")
+        self.assertEqual(DOW[6], "Sun")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
