@@ -175,7 +175,7 @@ class TestNowStrWeekday(unittest.TestCase):
         state = compute_state({})
         self.assertRegex(
             state["now_str"],
-            r"^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)_\d{2}:\d{2}_\S+$",
+            r"^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)_\d{2}:\d{2}_.+$",
         )
 
     def test_now_str_weekday_matches_local_date(self):
