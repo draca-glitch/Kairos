@@ -25,11 +25,21 @@ Bridges Grok CLI's UserPromptSubmit hook to the Kairos ambient injectors
                            "additionalContext": "[temporal-state] ..."}}
    ```
 
-   If your Grok build delivers `additionalContext` to the model, the lines
-   land. If it does not, that is a Grok product gap to report upstream: there
-   is then NO path for hook-injected ambient context, and this adapter still
-   fixes history + identity (the state is correct the moment injection starts
-   working, and MCP layers 3/4/5 remain pull-available).
+   Live-verified on Grok CLI (2026-08-18): UserPromptSubmit is observe-only.
+   Grok ignores the exit code and stdout, including the Claude
+   `hookSpecificOutput.additionalContext` JSON this adapter emits. The
+   injectors still run and the ring still records, so history and identity are
+   correct. The model never sees `[temporal-state]` / `[obligations]` /
+   `[staleness]` as ambient context.
+
+   `additionalContext` is only documented on Stop, where it means "keep the
+   agent working" rather than "inject into the prompt." Do not use Stop as the
+   injection path.
+
+   This is a Grok product gap, not a Kairos failure. Layers 3/4/5 stay
+   pull-available over MCP. The moment Grok delivers UserPromptSubmit
+   additionalContext to the model, this adapter starts injecting with no
+   further change.
 
    Verify on a live session by asking the model to repeat any
    `[temporal-state]` line it can see in its context.

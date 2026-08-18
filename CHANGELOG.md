@@ -8,6 +8,11 @@ The kit is pre-1.0: minor bumps may include incompatible changes when the cost o
 
 Next probable: a controlled with-vs-without-Kairos benchmark on time-shaped reasoning tasks to upgrade the paper's "constitutive" claim from architectural assertion to measured outcome.
 
+### Notes
+- Grok adapter: current Grok CLI ignores UserPromptSubmit stdout, including
+  `hookSpecificOutput.additionalContext`. Live-verified 2026-08-18. History
+  and identity still work; ambient injection waits on a Grok product change.
+
 ## [0.8.0] - 2026-08-18 (Grok adapter; transcript-theft guard; harness identity)
 
 ### Added
