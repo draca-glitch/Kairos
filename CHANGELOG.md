@@ -8,6 +8,18 @@ The kit is pre-1.0: minor bumps may include incompatible changes when the cost o
 
 Next probable: a controlled with-vs-without-Kairos benchmark on time-shaped reasoning tasks to upgrade the paper's "constitutive" claim from architectural assertion to measured outcome.
 
+## [0.8.0] - 2026-08-18 (Grok adapter; transcript-theft guard; harness identity)
+
+### Added
+- **Grok CLI adapter** (`adapters/grok/`): sibling of the Codex adapter. Normalizes Grok's camelCase payload (sessionId), selects the thread-ring backend, exports KAIROS_THREAD_ID for the chain, runs the injector hooks, and emits their collected output as the Claude hook JSON contract (`hookSpecificOutput.additionalContext`) because Grok treats plain UserPromptSubmit stdout as observe-only. If a Grok build does not deliver additionalContext either, that is a documented Grok product gap; the adapter still fixes history and identity. ring_record() once after the chain, same read-only-hooks contract as Codex. 11 tests.
+- `mcp/temporal-pattern.py`: opt-in ring source. `KAIROS_PATTERN_SOURCES=transcripts,ring` folds thread-ring timestamps (adapter harnesses) into the activity analytics; default remains Claude transcripts only.
+
+### Changed
+- `temporal_lib.find_transcript(payload=None)`: the newest-mtime fallback now REQUIRES a Claude session identity (CLAUDE_SESSION_ID env or payload session_id). Without any identity the caller is most likely a foreign harness whose raw hooks would otherwise steal a concurrent Claude session's transcript and report its cadence as their own; session-start is the honest answer. A genuine Claude session with a rotated transcript file keeps the fallback (identity present, file missing). compute_state passes its payload through.
+- `temporal_lib.resolve_thread_id`: also accepts payload `sessionId` (camelCase) and env `GROK_SESSION_ID` / `CODEX_THREAD_ID` / `CLAUDE_SESSION_ID`, in that order after the existing `session_id` / `KAIROS_THREAD_ID`.
+- `hooks/time.sh`: session marker key follows the same identity chain instead of collapsing every non-Claude harness onto the shared "default" marker (date lines appeared or vanished depending on which harness fired last).
+- Codex adapter: exports KAIROS_THREAD_ID for the hook chain (time.sh marker isolation), matching the Grok adapter.
+
 ## [0.7.0] - 2026-08-18 (Cross-harness history: thread-ring backend + Codex adapter)
 
 ### Added

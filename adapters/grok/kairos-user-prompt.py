@@ -1,19 +1,26 @@
 #!/usr/bin/env python3
-"""Codex UserPromptSubmit bridge for Kairos.
+"""Grok CLI UserPromptSubmit bridge for Kairos.
 
-Codex CLI and Claude Code use different hook payload shapes, and Codex writes
-no transcripts under ~/.claude/projects. This adapter:
+Grok writes no transcripts under ~/.claude/projects and its hook payload uses
+camelCase keys (sessionId), so raw Kairos hooks classify every prompt as
+phase=session-start (or, within the transcript-idle window, steal a concurrent
+Claude session's thread). This adapter:
 
-  1. extracts the current user prompt and thread id from Codex's hook payload,
-  2. synthesizes the Claude-style JSON the Kairos hooks expect,
-  3. selects the thread-ring history backend (KAIROS_HISTORY_BACKEND=ring),
-  4. runs the ambient injector hooks in order, forwarding their output,
-  5. records the prompt timestamp in the thread ring EXACTLY ONCE, after the
-     chain (hooks are read-only; every hook in one prompt's chain must see the
-     same prior state).
+  1. extracts the current user prompt and thread id (sessionId/session_id)
+     from Grok's hook payload,
+  2. synthesizes the snake_case Claude-style payload the Kairos hooks expect,
+  3. selects the thread-ring history backend (KAIROS_HISTORY_BACKEND=ring)
+     and exports KAIROS_THREAD_ID for the chain (time.sh marker isolation),
+  4. runs the ambient injector hooks in order and collects their output,
+  5. emits the collected lines as UserPromptSubmit hookSpecificOutput
+     additionalContext JSON (the Claude hook contract Grok's compatibility
+     layer is expected to honor; plain stdout is observe-only in Grok),
+  6. records the prompt timestamp in the thread ring EXACTLY ONCE, after the
+     chain (hooks are read-only; every hook in one prompt's chain must see
+     the same prior state).
 
-Install: copy next to your Codex config (e.g. ~/.codex/hooks/) and register in
-~/.codex/hooks.json; see README.md in this directory.
+Install: copy into Grok's hook directory and register for UserPromptSubmit;
+see README.md in this directory.
 
 Env knobs (all optional):
   KAIROS_HOOKS_DIR       hook scripts location (default ~/.claude/hooks)
@@ -90,14 +97,15 @@ def resolve_session_id(payload: dict) -> str:
         or payload.get("sessionId")
         or payload.get("thread_id")
         or payload.get("conversation_id")
-        or os.environ.get("CODEX_THREAD_ID")
-        or "codex"
+        or os.environ.get("GROK_SESSION_ID")
+        or "grok"
     )
 
 
-def apply_env_defaults() -> None:
+def apply_env_defaults(session_id: str) -> None:
     home = Path.home()
     os.environ.setdefault("KAIROS_HISTORY_BACKEND", "ring")
+    os.environ.setdefault("KAIROS_THREAD_ID", session_id)
     os.environ.setdefault("CLAUDE_KIT_STATE_DIR", str(home / ".claude" / "state"))
     mnemos_db = home / ".mnemos" / "memory.db"
     os.environ.setdefault(
@@ -118,14 +126,13 @@ def main() -> int:
     if "<task-notification>" in prompt:
         return 0
 
-    apply_env_defaults()
+    session_id = resolve_session_id(payload)
+    apply_env_defaults(session_id)
 
     hooks_dir = Path(os.environ.get("KAIROS_HOOKS_DIR", str(Path.home() / ".claude" / "hooks")))
-    session_id = resolve_session_id(payload)
-    # Give time.sh (and anything else env-keyed) per-thread marker isolation.
-    os.environ.setdefault("KAIROS_THREAD_ID", session_id)
     bridged = json.dumps({"session_id": session_id, "prompt": prompt})
 
+    lines = []
     for name in HOOK_ORDER:
         path = hooks_dir / name
         if not path.exists():
@@ -144,7 +151,19 @@ def main() -> int:
             continue
         out = proc.stdout.strip()
         if out:
-            print(out)
+            lines.append(out)
+
+    if lines:
+        # Grok treats plain UserPromptSubmit stdout as observe-only, so the
+        # injector lines ride the Claude hook JSON contract instead. If Grok
+        # does not deliver additionalContext either, that is a Grok product
+        # gap; see README.
+        print(json.dumps({
+            "hookSpecificOutput": {
+                "hookEventName": "UserPromptSubmit",
+                "additionalContext": "\n".join(lines),
+            },
+        }))
 
     try:
         sys.path.insert(0, str(hooks_dir))

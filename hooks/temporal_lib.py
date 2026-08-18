@@ -43,15 +43,28 @@ def is_task_notification(payload: dict) -> bool:
     return "<task-notification>" in prompt
 
 
-def find_transcript() -> Path | None:
+def find_transcript(payload: dict | None = None) -> Path | None:
     home = Path.home() / ".claude" / "projects"
     if not home.exists():
         return None
 
-    session_id = os.environ.get("CLAUDE_SESSION_ID", "").strip()
+    session_id = (
+        os.environ.get("CLAUDE_SESSION_ID", "").strip()
+        or str((payload or {}).get("session_id") or "").strip()
+    )
     if session_id:
         for jsonl in home.rglob(f"{session_id}.jsonl"):
             return jsonl
+
+    # Newest-transcript mtime fallback, but ONLY when a Claude session
+    # identity was present (env or payload) and its file was simply not
+    # found (e.g. rotation). Without any session identity we are most
+    # likely a foreign harness (Grok, Codex without adapter) whose raw
+    # hooks would otherwise steal a concurrent Claude session's thread
+    # and report its cadence as our own; session-start is the honest
+    # answer there.
+    if not session_id:
+        return None
 
     candidates = sorted(home.rglob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
     if candidates and time.time() - candidates[0].stat().st_mtime < TRANSCRIPT_MAX_IDLE_SECONDS:
@@ -86,7 +99,17 @@ def state_dir() -> Path:
 
 
 def resolve_thread_id(payload: dict | None) -> str:
-    for value in ((payload or {}).get("session_id"), os.environ.get("KAIROS_THREAD_ID")):
+    # Payload first (session_id, then Grok's camelCase sessionId), then env:
+    # the explicit kit var, then per-harness session vars.
+    candidates = [
+        (payload or {}).get("session_id"),
+        (payload or {}).get("sessionId"),
+        os.environ.get("KAIROS_THREAD_ID"),
+        os.environ.get("GROK_SESSION_ID"),
+        os.environ.get("CODEX_THREAD_ID"),
+        os.environ.get("CLAUDE_SESSION_ID"),
+    ]
+    for value in candidates:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return ""
@@ -300,7 +323,7 @@ def compute_state(payload: dict | None = None) -> dict:
             return state
         return _apply_prompt_history(state, prompts, now_utc, now_local)
 
-    transcript = find_transcript()
+    transcript = find_transcript(payload)
     if not transcript:
         return state
     state["transcript_available"] = True

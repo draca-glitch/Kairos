@@ -100,8 +100,40 @@ def _is_real_user_prompt(event: dict) -> bool:
     return False
 
 
+def _iter_ring_prompts(days_back: int):
+    """Yield (utc_dt, ring_stem) from thread-ring files (adapter harnesses:
+    Codex, Grok). Opt-in via KAIROS_PATTERN_SOURCES containing 'ring'."""
+    state_dir = Path(os.environ.get(
+        "CLAUDE_KIT_STATE_DIR", str(Path.home() / ".claude" / "state")
+    ))
+    ring_dir = state_dir / "thread-rings"
+    if not ring_dir.exists():
+        return
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)
+    for ring in ring_dir.glob("*.json"):
+        try:
+            data = json.loads(ring.read_text(encoding="utf-8"))
+            for item in data.get("timestamps") or []:
+                try:
+                    dt = datetime.fromisoformat(str(item))
+                except Exception:
+                    continue
+                if dt.tzinfo is None or dt < cutoff:
+                    continue
+                yield (dt, f"ring:{ring.stem}")
+        except Exception:
+            continue
+
+
 def _iter_user_prompts(days_back: int):
-    """Yield (utc_dt, session_id) for each real user prompt within the window."""
+    """Yield (utc_dt, session_id) for each real user prompt within the window.
+
+    Sources: Claude transcripts (always) plus, when KAIROS_PATTERN_SOURCES
+    includes 'ring', the thread-ring timestamps written by harness adapters.
+    Default stays transcripts-only."""
+    sources = os.environ.get("KAIROS_PATTERN_SOURCES", "transcripts")
+    if "ring" in {s.strip() for s in sources.split(",")}:
+        yield from _iter_ring_prompts(days_back)
     if not PROJECTS_DIR.exists():
         return
     cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)

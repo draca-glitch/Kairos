@@ -1,0 +1,81 @@
+# Grok CLI adapter
+
+Bridges Grok CLI's UserPromptSubmit hook to the Kairos ambient injectors
+(Layer 1 timestamp, temporal-state, routing, obligations, staleness).
+
+## The three Grok problems this solves
+
+1. **History**: Grok writes no transcripts under `~/.claude/projects`, so the
+   default transcript backend classifies every prompt as
+   `phase=session-start`; worse, within the transcript-idle window the
+   newest-mtime fallback could steal a CONCURRENT Claude session's transcript
+   and report Claude's cadence as Grok's. The adapter selects the thread-ring
+   backend, and since v0.8.0 the mtime fallback itself requires a Claude
+   session identity (env or payload) before it fires.
+2. **Thread identity**: Grok uses camelCase `sessionId` (and
+   `GROK_SESSION_ID` in env); `resolve_thread_id()` and `time.sh` accept both
+   since v0.8.0, and the adapter normalizes the bridged payload to
+   `session_id` anyway.
+3. **Injection**: Grok treats plain UserPromptSubmit stdout as observe-only,
+   so the adapter emits the collected injector lines as the Claude hook JSON
+   contract instead:
+
+   ```json
+   {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit",
+                           "additionalContext": "[temporal-state] ..."}}
+   ```
+
+   If your Grok build delivers `additionalContext` to the model, the lines
+   land. If it does not, that is a Grok product gap to report upstream: there
+   is then NO path for hook-injected ambient context, and this adapter still
+   fixes history + identity (the state is correct the moment injection starts
+   working, and MCP layers 3/4/5 remain pull-available).
+
+   Verify on a live session by asking the model to repeat any
+   `[temporal-state]` line it can see in its context.
+
+Hooks stay read-only; the adapter records the prompt timestamp exactly once
+per prompt, after the hook chain, same contract as the Codex adapter.
+
+## Install
+
+1. Make sure the Kairos hooks are installed (default `~/.claude/hooks`).
+2. Copy `kairos-user-prompt.py` into Grok's hook directory.
+3. Register it for UserPromptSubmit in Grok's hook configuration (Claude
+   settings.json shape, adjust to where your Grok build reads hooks):
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/usr/bin/python3 /home/USER/.grok/hooks/kairos-user-prompt.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+4. Disable any raw (non-adapter) Kairos hook wiring for Grok at the same
+   time, otherwise the chain runs twice per prompt.
+
+## Env knobs
+
+Same as the Codex adapter: `KAIROS_HOOKS_DIR`, `CLAUDE_KIT_STATE_DIR`,
+`KAIROS_MEMORY_DB`, `KAIROS_TASKS_DB`, `KAIROS_RING_STALE_SECONDS`.
+
+## Expected behavior
+
+- First prompt in a new Grok session: `phase=session-start`
+- Next prompt ~2 min later: `cadence=active-collaboration | phase=continuing`
+- A concurrent Claude session's transcript is never inherited
+- Sessions are isolated (per-thread rings; `time.sh` date markers keyed by
+  thread id, not a shared "default")
+- Optional: include ring timestamps in temporal-pattern analytics with
+  `KAIROS_PATTERN_SOURCES=transcripts,ring`

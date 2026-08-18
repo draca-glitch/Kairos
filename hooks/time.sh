@@ -40,7 +40,11 @@ case "$PROMPT_TEXT" in
     *"<task-notification>"*) exit 0 ;;
 esac
 
-SESSION="${CLAUDE_SESSION_ID:-default}"
+# Session identity chain mirrors temporal_lib.resolve_thread_id: Claude env,
+# then the kit var (set by adapters), then per-harness vars. Without this,
+# every Grok/Codex session shared the "default" marker and date lines
+# appeared or vanished depending on which harness fired last.
+SESSION="${CLAUDE_SESSION_ID:-${KAIROS_THREAD_ID:-${GROK_SESSION_ID:-${CODEX_THREAD_ID:-default}}}}"
 MARKER_DIR="${TMPDIR:-/tmp}/kairos-time"
 MARKER="$MARKER_DIR/${SESSION}.last-date"
 mkdir -p "$MARKER_DIR" 2>/dev/null
