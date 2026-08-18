@@ -10,6 +10,7 @@ Single source of truth for: transcript discovery, real-user-prompt filter,
 gap/cadence/phase classification, time-of-day bucketing. Pure stdlib.
 """
 
+import hashlib
 import json
 import os
 import time
@@ -56,6 +57,106 @@ def find_transcript() -> Path | None:
     if candidates and time.time() - candidates[0].stat().st_mtime < TRANSCRIPT_MAX_IDLE_SECONDS:
         return candidates[0]
     return None
+
+
+# --- Thread-ring history backend -------------------------------------------
+#
+# Claude Code writes transcripts under ~/.claude/projects, so the transcript
+# backend above can read prompt history for free. Other harnesses (Codex CLI
+# via adapters/codex/) have no such transcripts; for them, prompt timestamps
+# are kept in a small per-thread ring under the kit state dir. Hooks only READ
+# the ring (all hooks in one prompt's chain must see identical prior state);
+# the harness adapter calls ring_record() exactly once per prompt, after the
+# hook chain has run.
+#
+# Select with KAIROS_HISTORY_BACKEND=ring (default: transcript, unchanged).
+# Thread identity comes from payload["session_id"] or KAIROS_THREAD_ID.
+
+RING_LIMIT = 20
+RING_DIR_NAME = "thread-rings"
+RING_STALE_SECONDS = int(os.environ.get("KAIROS_RING_STALE_SECONDS", str(30 * 86400)))
+
+
+def history_backend() -> str:
+    return os.environ.get("KAIROS_HISTORY_BACKEND", "transcript").strip().lower()
+
+
+def state_dir() -> Path:
+    return Path(os.environ.get("CLAUDE_KIT_STATE_DIR", str(Path.home() / ".claude" / "state")))
+
+
+def resolve_thread_id(payload: dict | None) -> str:
+    for value in ((payload or {}).get("session_id"), os.environ.get("KAIROS_THREAD_ID")):
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _ring_path(thread_id: str) -> Path:
+    # Hash the thread id: external harnesses control its content, so it never
+    # touches the filesystem as a raw name.
+    digest = hashlib.sha256(thread_id.encode("utf-8")).hexdigest()[:16]
+    return state_dir() / RING_DIR_NAME / f"{digest}.json"
+
+
+def ring_load(thread_id: str, limit: int = RING_LIMIT) -> list[datetime]:
+    """Prior prompt timestamps for a thread, oldest first. Corrupt or missing
+    state degrades to an empty list (session-start)."""
+    if not thread_id:
+        return []
+    try:
+        data = json.loads(_ring_path(thread_id).read_text(encoding="utf-8"))
+        raw = data.get("timestamps")
+    except Exception:
+        return []
+    timestamps = []
+    for item in raw if isinstance(raw, list) else []:
+        try:
+            dt = datetime.fromisoformat(str(item))
+        except Exception:
+            continue
+        if dt.tzinfo is not None:
+            timestamps.append(dt)
+    timestamps.sort()
+    return timestamps[-limit:]
+
+
+def ring_record(thread_id: str, when: datetime | None = None) -> None:
+    """Append one prompt timestamp to the thread ring, atomically. Call ONCE
+    per prompt, after the hook chain has read the previous state."""
+    if not thread_id:
+        return
+    when = when or datetime.now(timezone.utc)
+    path = _ring_path(thread_id)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        timestamps = ring_load(thread_id)
+        timestamps.append(when)
+        timestamps = timestamps[-RING_LIMIT:]
+        tmp = path.parent / f"{path.name}.{os.getpid()}.tmp"
+        tmp.write_text(
+            json.dumps({"timestamps": [t.isoformat() for t in timestamps]}),
+            encoding="utf-8",
+        )
+        os.replace(tmp, path)
+    except Exception:
+        return
+    _prune_stale_rings(path.parent, keep=path)
+
+
+def _prune_stale_rings(ring_dir: Path, keep: Path | None = None) -> None:
+    cutoff = time.time() - RING_STALE_SECONDS
+    try:
+        for f in ring_dir.glob("*.json"):
+            if keep is not None and f == keep:
+                continue
+            try:
+                if f.stat().st_mtime < cutoff:
+                    f.unlink()
+            except FileNotFoundError:
+                continue
+    except Exception:
+        return
 
 
 def is_real_user_prompt(event: dict) -> bool:
@@ -190,6 +291,15 @@ def compute_state(payload: dict | None = None) -> dict:
         "prompt_text": (payload or {}).get("prompt") or "",
     }
 
+    if history_backend() == "ring":
+        # The ring is available by construction; an empty one is session-start.
+        state["transcript_available"] = True
+        prompts = ring_load(resolve_thread_id(payload))
+        state["prompts_count"] = len(prompts)
+        if not prompts:
+            return state
+        return _apply_prompt_history(state, prompts, now_utc, now_local)
+
     transcript = find_transcript()
     if not transcript:
         return state
@@ -199,7 +309,12 @@ def compute_state(payload: dict | None = None) -> dict:
     state["prompts_count"] = len(prompts)
     if not prompts:
         return state
+    return _apply_prompt_history(state, prompts, now_utc, now_local)
 
+
+def _apply_prompt_history(
+    state: dict, prompts: list[datetime], now_utc: datetime, now_local: datetime
+) -> dict:
     gaps = []
     prev = now_utc
     for ts in reversed(prompts):
