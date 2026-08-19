@@ -10,6 +10,7 @@ Run:
   python3 -m unittest tests/test_harness_identity.py
 """
 
+import contextlib
 import importlib.util
 import json
 import os
@@ -25,6 +26,30 @@ sys.path.insert(0, str(HOOKS_DIR))
 
 import temporal_lib
 from temporal_lib import find_transcript, resolve_thread_id
+
+
+@contextlib.contextmanager
+def fake_home():
+    """Point the process home at an empty temp dir, cross-platform.
+
+    temporal_lib resolves home via Path.home(), which reads HOME on POSIX
+    but USERPROFILE on Windows (ntpath.expanduser never consults HOME), so
+    both must be patched or the fixture silently escapes into the real
+    ~/.claude/projects on Windows.
+    """
+    keys = ("HOME", "USERPROFILE")
+    old = {k: os.environ.get(k) for k in keys}
+    with tempfile.TemporaryDirectory() as tmp:
+        for k in keys:
+            os.environ[k] = tmp
+        try:
+            yield Path(tmp)
+        finally:
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
 
 GROK_ADAPTER = Path(__file__).resolve().parent.parent / "adapters" / "grok" / "kairos-user-prompt.py"
 
@@ -96,48 +121,24 @@ class TestTranscriptTheftGuard(EnvIsolation):
     def test_no_identity_means_no_mtime_fallback(self):
         """A foreign harness without a session identity must NOT inherit the
         newest Claude transcript, however fresh it is."""
-        old_home = os.environ.get("HOME")
-        with tempfile.TemporaryDirectory() as fake_home:
-            os.environ["HOME"] = fake_home
-            try:
-                self._projects_with_recent_jsonl(Path(fake_home))
-                self.assertIsNone(find_transcript({}))
-                self.assertIsNone(find_transcript(None))
-            finally:
-                if old_home is None:
-                    os.environ.pop("HOME", None)
-                else:
-                    os.environ["HOME"] = old_home
+        with fake_home() as home:
+            self._projects_with_recent_jsonl(home)
+            self.assertIsNone(find_transcript({}))
+            self.assertIsNone(find_transcript(None))
 
     def test_payload_session_id_finds_specific_transcript(self):
-        old_home = os.environ.get("HOME")
-        with tempfile.TemporaryDirectory() as fake_home:
-            os.environ["HOME"] = fake_home
-            try:
-                jsonl = self._projects_with_recent_jsonl(Path(fake_home), "sess-abc")
-                found = find_transcript({"session_id": "sess-abc"})
-                self.assertEqual(found, jsonl)
-            finally:
-                if old_home is None:
-                    os.environ.pop("HOME", None)
-                else:
-                    os.environ["HOME"] = old_home
+        with fake_home() as home:
+            jsonl = self._projects_with_recent_jsonl(home, "sess-abc")
+            found = find_transcript({"session_id": "sess-abc"})
+            self.assertEqual(found, jsonl)
 
     def test_identity_present_but_file_missing_uses_fallback(self):
         """A genuine Claude session whose transcript rotated still gets the
         newest-mtime fallback (pre-v0.8.0 behavior preserved)."""
-        old_home = os.environ.get("HOME")
-        with tempfile.TemporaryDirectory() as fake_home:
-            os.environ["HOME"] = fake_home
-            try:
-                jsonl = self._projects_with_recent_jsonl(Path(fake_home), "other-session")
-                found = find_transcript({"session_id": "rotated-away"})
-                self.assertEqual(found, jsonl)
-            finally:
-                if old_home is None:
-                    os.environ.pop("HOME", None)
-                else:
-                    os.environ["HOME"] = old_home
+        with fake_home() as home:
+            jsonl = self._projects_with_recent_jsonl(home, "other-session")
+            found = find_transcript({"session_id": "rotated-away"})
+            self.assertEqual(found, jsonl)
 
 
 class TestGrokAdapter(EnvIsolation):

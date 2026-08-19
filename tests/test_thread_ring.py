@@ -7,6 +7,7 @@ Run:
   python3 tests/test_thread_ring.py
 """
 
+import contextlib
 import json
 import os
 import sys
@@ -28,6 +29,30 @@ from temporal_lib import (
     ring_record,
     resolve_thread_id,
 )
+
+
+@contextlib.contextmanager
+def fake_home():
+    """Point the process home at an empty temp dir, cross-platform.
+
+    temporal_lib resolves home via Path.home(), which reads HOME on POSIX
+    but USERPROFILE on Windows (ntpath.expanduser never consults HOME), so
+    both must be patched or the fixture silently escapes into the real
+    ~/.claude/projects on Windows.
+    """
+    keys = ("HOME", "USERPROFILE")
+    old = {k: os.environ.get(k) for k in keys}
+    with tempfile.TemporaryDirectory() as tmp:
+        for k in keys:
+            os.environ[k] = tmp
+        try:
+            yield Path(tmp)
+        finally:
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
 
 
 class RingTestCase(unittest.TestCase):
@@ -156,16 +181,8 @@ class TestBackendSelection(RingTestCase):
     def test_default_backend_ignores_ring(self):
         self.seed("thread-a", [120])
         os.environ["KAIROS_HISTORY_BACKEND"] = "transcript"
-        old_home = os.environ.get("HOME")
-        with tempfile.TemporaryDirectory() as fake_home:
-            os.environ["HOME"] = fake_home
-            try:
-                state = compute_state({"session_id": "thread-a", "prompt": "hej"})
-            finally:
-                if old_home is None:
-                    os.environ.pop("HOME", None)
-                else:
-                    os.environ["HOME"] = old_home
+        with fake_home():
+            state = compute_state({"session_id": "thread-a", "prompt": "hej"})
         self.assertFalse(state["transcript_available"])
         self.assertEqual(state["phase"], "session-start")
 
