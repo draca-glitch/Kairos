@@ -21,6 +21,7 @@ MCP_DIR = Path(__file__).resolve().parent.parent / "mcp"
 SERVERS = ["temporal-pattern", "temporal-staleness", "temporal-future"]
 MODERN = "2026-07-28"
 LEGACY = "2024-11-05"
+INTERMEDIATE = ["2025-06-18", "2025-03-26"]
 SERVER_INFO_KEY = "io.modelcontextprotocol/serverInfo"
 PROTOCOL_KEY = "io.modelcontextprotocol/protocolVersion"
 
@@ -132,3 +133,26 @@ def test_tool_calls_still_work_under_the_modern_envelope(server, call):
     assert result["resultType"] == "complete"
     assert not result.get("isError"), result
     assert json.loads(result["content"][0]["text"])
+
+
+# The published revisions between the two eras (2025-03-26, 2025-06-18) still
+# open with initialize, so the legacy path serves them. They must be accepted:
+# a client negotiating one of them worked before the version gate existed, and
+# refusing it now would be a silent regression rather than a compatibility win.
+
+
+@pytest.mark.parametrize("server", SERVERS)
+@pytest.mark.parametrize("version", INTERMEDIATE)
+def test_intermediate_revision_is_served_not_refused(server, version):
+    out = talk(server, [
+        {"jsonrpc": "2.0", "id": 1, "method": "server/discover", "params": {}},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": modern_meta(version)},
+        {"jsonrpc": "2.0", "id": 3, "method": "initialize",
+         "params": {"protocolVersion": version, "capabilities": {},
+                    "clientInfo": {"name": "test", "version": "1"}}},
+    ])
+    assert version in out[1]["result"]["supportedVersions"]
+    assert "error" not in out[2], out[2]
+    assert out[2]["result"]["tools"]
+    # initialize echoes what the client proposed rather than downgrading it.
+    assert out[3]["result"]["protocolVersion"] == version

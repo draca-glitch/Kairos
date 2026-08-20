@@ -276,7 +276,12 @@ TOOL_DEFINITIONS = [
 # dual-era server -- the only server kind that works with both client eras.
 PROTOCOL_MODERN = "2026-07-28"
 PROTOCOL_LEGACY = "2024-11-05"
-SUPPORTED_VERSIONS = [PROTOCOL_MODERN, PROTOCOL_LEGACY]
+# The intermediate published revisions still open with initialize and share the
+# legacy tools/list + tools/call wire format, so the legacy path serves them
+# correctly. Refusing a version we can in fact speak would turn a working
+# client into a hard failure for no benefit.
+PROTOCOL_INTERMEDIATE = ["2025-06-18", "2025-03-26"]
+SUPPORTED_VERSIONS = [PROTOCOL_MODERN, *PROTOCOL_INTERMEDIATE, PROTOCOL_LEGACY]
 SERVER_NAME = "temporal-staleness"
 SERVER_VERSION = "1.1.0"
 SERVER_INSTRUCTIONS = "Audit whether time-volatile claims in context may be stale relative to the assistant's training cutoff."
