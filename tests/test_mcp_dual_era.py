@@ -21,7 +21,7 @@ MCP_DIR = Path(__file__).resolve().parent.parent / "mcp"
 SERVERS = ["temporal-pattern", "temporal-staleness", "temporal-future"]
 MODERN = "2026-07-28"
 LEGACY = "2024-11-05"
-INTERMEDIATE = ["2025-06-18", "2025-03-26"]
+INTERMEDIATE = ["2025-11-25", "2025-06-18", "2025-03-26"]
 SERVER_INFO_KEY = "io.modelcontextprotocol/serverInfo"
 PROTOCOL_KEY = "io.modelcontextprotocol/protocolVersion"
 
@@ -156,3 +156,39 @@ def test_intermediate_revision_is_served_not_refused(server, version):
     assert out[2]["result"]["tools"]
     # initialize echoes what the client proposed rather than downgrading it.
     assert out[3]["result"]["protocolVersion"] == version
+
+
+# The gate is a range, not a list. Refusing every revision the servers had
+# not heard of broke working clients twice, so an unnamed revision inside
+# the handshake era is now served rather than rejected.
+
+
+@pytest.mark.parametrize("server", SERVERS)
+def test_unnamed_in_range_revision_is_served(server):
+    out = talk(server, [
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/list",
+         "params": modern_meta("2025-09-09")},
+    ])
+    assert "error" not in out[1], out[1]
+    assert out[1]["result"]["tools"]
+
+
+@pytest.mark.parametrize("server", SERVERS)
+def test_revision_newer_than_modern_is_refused(server):
+    out = talk(server, [
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/list",
+         "params": modern_meta("2027-01-01")},
+    ])
+    error = out[1]["error"]
+    assert error["code"] == -32022
+    assert MODERN in error["data"]["supported"]
+
+
+@pytest.mark.parametrize("server", SERVERS)
+@pytest.mark.parametrize("bogus", ["1900-01-01", "not-a-version", "2025-6-18"])
+def test_malformed_or_pre_legacy_is_refused(server, bogus):
+    out = talk(server, [
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/list",
+         "params": modern_meta(bogus)},
+    ])
+    assert out[1].get("error", {}).get("code") == -32022, out[1]

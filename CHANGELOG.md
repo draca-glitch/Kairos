@@ -8,6 +8,14 @@ The kit is pre-1.0: minor bumps may include incompatible changes when the cost o
 
 Next probable: a controlled with-vs-without-Kairos benchmark on time-shaped reasoning tasks to upgrade the paper's "constitutive" claim from architectural assertion to measured outcome.
 
+## [0.10.0] - 2026-08-20
+
+### Changed
+- **The protocol-version gate is a range, not an allowlist.** 0.9.0 shipped a hardcoded list of accepted revisions and 0.9.1 extended it; both were wrong, because such a list can only name the revisions its author happened to know about and refuses everything else with `-32022`. `2025-11-25` -- flagged as a known gap in 0.9.1 -- was the second working revision rejected that way. Every handshake-era revision shares one `tools/list`/`tools/call` wire format, so all three servers now accept any dated revision from `PROTOCOL_LEGACY` up to `PROTOCOL_MODERN` inclusive and serve the unnamed ones through the legacy path. Revisions newer than `PROTOCOL_MODERN` are still refused, with the known list attached so the client can downgrade; malformed and pre-legacy values are still refused. `KNOWN_VERSIONS` remains as what `server/discover` advertises -- documentation, not the gate. Server versions bump to 1.2.0. 18 new tests, 169 pass.
+
+### Fixed
+- The 0.9.1 known gap is closed: `2025-11-25` is served, and so is every other revision in the range whether or not this release has heard of it.
+
 ## [0.9.1] - 2026-08-20
 
 ### Fixed

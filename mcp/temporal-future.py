@@ -288,12 +288,45 @@ TOOL_DEFINITIONS = [
 # dual-era server -- the only server kind that works with both client eras.
 PROTOCOL_MODERN = "2026-07-28"
 PROTOCOL_LEGACY = "2024-11-05"
-# The intermediate published revisions still open with initialize and share the
-# legacy tools/list + tools/call wire format, so the legacy path serves them
-# correctly. Refusing a version we can in fact speak would turn a working
-# client into a hard failure for no benefit.
-PROTOCOL_INTERMEDIATE = ["2025-06-18", "2025-03-26"]
-SUPPORTED_VERSIONS = [PROTOCOL_MODERN, *PROTOCOL_INTERMEDIATE, PROTOCOL_LEGACY]
+# Revisions we know by name, newest first. This list is what server/discover
+# advertises -- it is documentation, not the gate. Using it AS the gate meant
+# every revision we had not heard of was refused, which broke working clients
+# twice: once for 2025-03-26/2025-06-18, again for 2025-11-25.
+KNOWN_VERSIONS = [
+    PROTOCOL_MODERN,
+    "2025-11-25",
+    "2025-06-18",
+    "2025-03-26",
+    PROTOCOL_LEGACY,
+]
+SUPPORTED_VERSIONS = KNOWN_VERSIONS
+
+
+def _is_dated_revision(version):
+    parts = version.split("-")
+    return (
+        len(version) == 10
+        and len(parts) == 3
+        and [len(p) for p in parts] == [4, 2, 2]
+        and all(p.isdigit() for p in parts)
+    )
+
+
+def protocol_supported(version):
+    """Serve any dated revision between the oldest we support and the newest we
+    know, named or not.
+
+    Every revision in that range shares one tools/list and tools/call wire
+    format, so the legacy path answers correctly for the ones we have no name
+    for. Anything newer than PROTOCOL_MODERN is still refused: we cannot know
+    what it changed, and -32022 with the known list lets the client downgrade
+    to something we do understand. ISO dates sort chronologically as strings.
+    """
+    return bool(version) and _is_dated_revision(version) and (
+        PROTOCOL_LEGACY <= version <= PROTOCOL_MODERN
+    )
+
+
 SERVER_NAME = "temporal-future"
 SERVER_VERSION = "1.1.0"
 SERVER_INSTRUCTIONS = "Query future-dated obligations and commitments held in the Mnemos memory store and the task database."
@@ -367,7 +400,7 @@ def _send(obj):
 
 
 def main():
-    sys.stderr.write("temporal-future-mcp v1.1.1 starting (dual-era: " + ", ".join(SUPPORTED_VERSIONS) + ")\n")
+    sys.stderr.write("temporal-future-mcp v1.2.0 starting (version range: " + ", ".join(SUPPORTED_VERSIONS) + ")\n")
     sys.stderr.flush()
     while True:
         msg = _read_msg()
@@ -381,7 +414,7 @@ def main():
             continue
 
         requested = _requested_version(params)
-        if requested is not None and requested not in SUPPORTED_VERSIONS:
+        if requested is not None and not protocol_supported(requested):
             _send(_unsupported_version(id_, requested))
             continue
 
@@ -402,7 +435,7 @@ def main():
                 "result": {
                     "protocolVersion": (
                         params.get("protocolVersion")
-                        if params.get("protocolVersion") in SUPPORTED_VERSIONS
+                        if protocol_supported(params.get("protocolVersion"))
                         else PROTOCOL_LEGACY
                     ),
                     "capabilities": {"tools": {}},
