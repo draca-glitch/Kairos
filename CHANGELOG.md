@@ -8,6 +8,14 @@ The kit is pre-1.0: minor bumps may include incompatible changes when the cost o
 
 Next probable: a controlled with-vs-without-Kairos benchmark on time-shaped reasoning tasks to upgrade the paper's "constitutive" claim from architectural assertion to measured outcome.
 
+## [0.9.1] - 2026-08-20
+
+### Fixed
+- **The version gate no longer refuses revisions the servers can actually speak.** 0.9.0 introduced the protocol-version check with `SUPPORTED_VERSIONS = [2026-07-28, 2024-11-05]`, which made the published revisions between the two eras a hard `-32022` refusal. Before the gate existed no version was checked at all, so clients negotiating one of them worked -- the compatibility feature broke compatibility. `2025-06-18` and `2025-03-26` are now accepted: both still open with `initialize` and share the legacy `tools/list`/`tools/call` wire format, so the legacy path already serves them correctly. `server/discover` advertises every supported revision and `initialize` echoes an intermediate proposal instead of downgrading it. Server versions bump to 1.1.1. 6 new tests (3 servers x 2 revisions), 151 pass.
+
+### Known gaps
+- `2025-11-25` is a published handshake-based revision and is **not** yet accepted; it is still refused with `-32022`. Extending the allowlist one revision at a time means each future revision breaks working clients again, so the fix under consideration is to invert the rule -- serve any well-formed handshake-era version via the legacy path -- rather than to keep appending.
+
 ## [0.9.0] - 2026-08-20
 
 ### Added

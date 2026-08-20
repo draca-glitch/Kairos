@@ -492,7 +492,7 @@ def _send(obj):
 
 
 def main():
-    sys.stderr.write("temporal-pattern-mcp v1.1 starting (dual-era: " + ", ".join(SUPPORTED_VERSIONS) + ")\n")
+    sys.stderr.write("temporal-pattern-mcp v1.1.1 starting (dual-era: " + ", ".join(SUPPORTED_VERSIONS) + ")\n")
     sys.stderr.flush()
     while True:
         msg = _read_msg()
