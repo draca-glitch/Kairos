@@ -453,7 +453,7 @@ def protocol_supported(version):
 
 
 SERVER_NAME = "temporal-pattern"
-SERVER_VERSION = "1.1.0"
+SERVER_VERSION = "1.2.0"
 SERVER_INSTRUCTIONS = "Query temporal patterns in this user's own interaction history: session cadence, hour and weekday heatmaps, gap distribution, and current-vs-baseline drift."
 META_PROTOCOL = "io.modelcontextprotocol/protocolVersion"
 META_SERVER_INFO = "io.modelcontextprotocol/serverInfo"
@@ -525,7 +525,7 @@ def _send(obj):
 
 
 def main():
-    sys.stderr.write("temporal-pattern-mcp v1.2.0 starting (version range: " + ", ".join(SUPPORTED_VERSIONS) + ")\n")
+    sys.stderr.write(f"{SERVER_NAME}-mcp v{SERVER_VERSION} starting (version range: " + ", ".join(SUPPORTED_VERSIONS) + ")\n")
     sys.stderr.flush()
     while True:
         msg = _read_msg()

@@ -8,6 +8,12 @@ The kit is pre-1.0: minor bumps may include incompatible changes when the cost o
 
 Next probable: a controlled with-vs-without-Kairos benchmark on time-shaped reasoning tasks to upgrade the paper's "constitutive" claim from architectural assertion to measured outcome.
 
+## [0.10.1] - 2026-08-20
+
+### Fixed
+- **`serverInfo` reported 1.1.0 on both 0.9.1 and 0.10.0.** Each server carried two version literals -- `SERVER_VERSION`, which `serverInfo` returns, and a second hardcoded copy in the startup banner. Both releases edited only the banner, so the version every client actually reads never moved, and 0.9.1 -- titled "version the intermediate-revision fix so deployments are identifiable" -- did not make deployments identifiable. Worse, the protocol gate's semantics changed twice in that window, so `serverInfo` could not distinguish an allowlist deployment from a range deployment, and a node that failed to pull looked identical to one that succeeded. The banner now derives from `SERVER_VERSION`, leaving exactly one version literal per file.
+- **The test suite pinned the drift instead of catching it.** `test_mcp_dual_era.py` asserted `serverInfo["version"] == "1.1.0"`, so correcting the constant turned the suite red and the stale value looked load-bearing. The assertion now reads the announced version out of this CHANGELOG, which is the thing the code is supposed to match; a second test asserts each server file contains exactly one version literal, closing the duplicate-copy hole that caused the drift. Both were confirmed to fail against the bug before being trusted. 173 pass.
+
 ## [0.10.0] - 2026-08-20
 
 ### Changed

@@ -11,6 +11,7 @@ legacy half matters most: it is what the currently deployed clients speak,
 and a regression there takes the temporal layer down in three harnesses.
 """
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -104,7 +105,7 @@ def test_initialize_still_negotiates_and_stays_legacy_shaped(replies):
     _server, out = replies
     result = out[4]["result"]
     assert result["protocolVersion"] == LEGACY
-    assert result["serverInfo"]["version"] == "1.1.0"
+    assert result["serverInfo"]["version"] == announced_server_version()
     # A legacy client is the only thing that sees this result; leave it alone.
     assert "resultType" not in result
     assert "_meta" not in result
@@ -192,3 +193,38 @@ def test_malformed_or_pre_legacy_is_refused(server, bogus):
          "params": modern_meta(bogus)},
     ])
     assert out[1].get("error", {}).get("code") == -32022, out[1]
+
+
+# A literal here pinned the drift it was supposed to catch: 0.9.1 and 0.10.0
+# both announced server-version bumps that never reached SERVER_VERSION, and
+# because this assertion hardcoded the stale value, making the correct change
+# turned the suite red. The announcement in the CHANGELOG is the thing the
+# code has to match, so read it from there instead of repeating it.
+
+
+def announced_server_version():
+    """The newest 'Server versions bump to X.Y.Z' in the CHANGELOG."""
+    changelog = Path(__file__).resolve().parent.parent / "CHANGELOG.md"
+    found = re.search(r"Server versions bump to (\d+\.\d+\.\d+)",
+                      changelog.read_text(encoding="utf-8"))
+    assert found, "no server-version announcement found in CHANGELOG.md"
+    return found.group(1)
+
+
+@pytest.mark.parametrize("server", SERVERS)
+def test_server_version_matches_what_the_changelog_announced(server):
+    """Every server reports the announced version -- and all three agree."""
+    out = talk(server, [
+        {"jsonrpc": "2.0", "id": 1, "method": "initialize",
+         "params": {"protocolVersion": LEGACY, "capabilities": {}}},
+    ])
+    assert out[1]["result"]["serverInfo"]["version"] == announced_server_version()
+
+
+def test_the_startup_banner_does_not_carry_its_own_version_literal():
+    """The banner used to hardcode a second copy, which is how the two drifted."""
+    for name in SERVERS:
+        source = (MCP_DIR / f"{name}.py").read_text(encoding="utf-8")
+        versions = set(re.findall(r"\d+\.\d+\.\d+", source))
+        assert len(versions) == 1, (
+            f"{name}: expected one version literal, found {sorted(versions)}")
