@@ -265,6 +265,67 @@ TOOL_DEFINITIONS = [
 ]
 
 
+# --- MCP protocol support -------------------------------------------------
+# Dual-era (spec 2026-07-28 "Backward Compatibility with Initialization-Based
+# Versions"). 2026-07-28 removed the initialize handshake: a modern client
+# declares its protocol version in per-request _meta, servers MUST implement
+# server/discover, and every result carries resultType. A legacy client still
+# opens with initialize and never announces a version per request, so absence
+# of _meta is the legacy case and must not be treated as a mismatch.
+# Serving both from one loop is what the spec's compatibility matrix calls a
+# dual-era server -- the only server kind that works with both client eras.
+PROTOCOL_MODERN = "2026-07-28"
+PROTOCOL_LEGACY = "2024-11-05"
+SUPPORTED_VERSIONS = [PROTOCOL_MODERN, PROTOCOL_LEGACY]
+SERVER_NAME = "temporal-staleness"
+SERVER_VERSION = "1.1.0"
+SERVER_INSTRUCTIONS = "Audit whether time-volatile claims in context may be stale relative to the assistant's training cutoff."
+META_PROTOCOL = "io.modelcontextprotocol/protocolVersion"
+META_SERVER_INFO = "io.modelcontextprotocol/serverInfo"
+CACHE_TTL_MS = 3600000
+ERR_UNSUPPORTED_PROTOCOL = -32022  # renumbered from -32004 in 2026-07-28
+
+
+def _server_info():
+    return {"name": SERVER_NAME, "version": SERVER_VERSION}
+
+
+def _requested_version(params):
+    """The protocol version a modern client declares on this request.
+
+    None means the client declared nothing at all, which is the legacy era --
+    never a mismatch, or we would reject every 2024-11-05 request.
+    """
+    return ((params or {}).get("_meta") or {}).get(META_PROTOCOL)
+
+
+def _result(body):
+    """Attach the fields 2026-07-28 requires to a result body.
+
+    Purely additive, so one shape serves both eras: legacy clients ignore
+    unknown keys, and the spec directs modern clients to read a missing
+    resultType as "complete".
+    """
+    out = dict(body)
+    out.setdefault("resultType", "complete")
+    meta = dict(out.get("_meta") or {})
+    meta.setdefault(META_SERVER_INFO, _server_info())
+    out["_meta"] = meta
+    return out
+
+
+def _unsupported_version(id_, requested):
+    """UnsupportedProtocolVersionError; `supported` is what lets a client retry."""
+    return {
+        "jsonrpc": "2.0", "id": id_,
+        "error": {
+            "code": ERR_UNSUPPORTED_PROTOCOL,
+            "message": "Unsupported protocol version",
+            "data": {"supported": SUPPORTED_VERSIONS, "requested": requested},
+        },
+    }
+
+
 def _read_msg():
     line = sys.stdin.readline()
     if not line:
@@ -276,12 +337,20 @@ def _read_msg():
 
 
 def _send(obj):
+    # One wrap point rather than per-call-site: every result gains resultType
+    # and serverInfo here. An initialize result is identified by its
+    # protocolVersion field and left exactly as it was, since only a legacy
+    # client ever sees one.
+    res = obj.get("result")
+    if isinstance(res, dict) and "protocolVersion" not in res:
+        obj = dict(obj)
+        obj["result"] = _result(res)
     sys.stdout.write(json.dumps(obj) + "\n")
     sys.stdout.flush()
 
 
 def main():
-    sys.stderr.write("temporal-staleness-mcp v1.0 starting\n")
+    sys.stderr.write("temporal-staleness-mcp v1.1 starting (dual-era: " + ", ".join(SUPPORTED_VERSIONS) + ")\n")
     sys.stderr.flush()
     while True:
         msg = _read_msg()
@@ -294,17 +363,41 @@ def main():
         if id_ is None:
             continue
 
-        if method == "initialize":
+        requested = _requested_version(params)
+        if requested is not None and requested not in SUPPORTED_VERSIONS:
+            _send(_unsupported_version(id_, requested))
+            continue
+
+        if method == "server/discover":
+            # MUST-implement in 2026-07-28, and the stdio backward-compat probe:
+            # a modern client sends it first and falls back to initialize on any
+            # error that is not a recognized modern one.
+            _send({"jsonrpc": "2.0", "id": id_, "result": {
+                "supportedVersions": SUPPORTED_VERSIONS,
+                "capabilities": {"tools": {}},
+                "instructions": SERVER_INSTRUCTIONS,
+                "ttlMs": CACHE_TTL_MS,
+                "cacheScope": "public",
+            }})
+        elif method == "initialize":
             _send({
                 "jsonrpc": "2.0", "id": id_,
                 "result": {
-                    "protocolVersion": "2024-11-05",
+                    "protocolVersion": (
+                        params.get("protocolVersion")
+                        if params.get("protocolVersion") in SUPPORTED_VERSIONS
+                        else PROTOCOL_LEGACY
+                    ),
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "temporal-staleness", "version": "1.0.0"},
+                    "serverInfo": _server_info(),
                 },
             })
         elif method == "tools/list":
-            _send({"jsonrpc": "2.0", "id": id_, "result": {"tools": TOOL_DEFINITIONS}})
+            _send({"jsonrpc": "2.0", "id": id_, "result": {
+                "tools": sorted(TOOL_DEFINITIONS, key=lambda t: t.get("name", "")),
+                "ttlMs": CACHE_TTL_MS,
+                "cacheScope": "public",
+            }})
         elif method == "tools/call":
             tool_name = params.get("name", "")
             tool_args = params.get("arguments", {}) or {}

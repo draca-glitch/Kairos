@@ -8,6 +8,12 @@ The kit is pre-1.0: minor bumps may include incompatible changes when the cost o
 
 Next probable: a controlled with-vs-without-Kairos benchmark on time-shaped reasoning tasks to upgrade the paper's "constitutive" claim from architectural assertion to measured outcome.
 
+## [0.9.0] - 2026-08-20
+
+### Added
+- **Dual-era MCP protocol support in all three MCP servers** (temporal-pattern, temporal-staleness, temporal-future), serving spec revision 2026-07-28 alongside legacy 2024-11-05. The 2026-07-28 revision removed the initialize handshake in favor of per-request `_meta` versioning; each server now implements `server/discover` (MUST) advertising `supportedVersions`, capabilities, instructions, and cacheability; a per-request version gate returning `UnsupportedProtocolVersionError` (-32022) with the supported list as retry data; an additive result envelope (`resultType: "complete"` plus server identity in `_meta`) that legacy clients ignore; deterministic tool ordering with `ttlMs`/`cacheScope` on `tools/list`; and negotiated (not asserted) initialize, echoing a supported client proposal and answering legacy otherwise. Server versions bump to 1.1.0.
+- 23 dual-era regression tests (tests/test_mcp_dual_era.py) covering discover, both eras of tools/list, legacy initialize negotiation, -32022 with retry data, and real tools/call under the modern envelope. Patch and tests contributed by the LinNuc triad node; verified against the published 2026-07-28 changelog before merge.
+
 ### Notes
 - Grok adapter: current Grok CLI ignores UserPromptSubmit stdout, including
   `hookSpecificOutput.additionalContext`. Live-verified 2026-08-18. History
