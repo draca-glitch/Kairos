@@ -157,12 +157,10 @@ The `highlights` list is the model's quick-attention layer: one-liners like `"3 
 ## Quick start
 
 ```bash
-# 1. Copy the hooks
-mkdir -p ~/.claude/hooks ~/.claude/mcp
-cp hooks/time.sh ~/.claude/hooks/
-cp hooks/temporal_lib.py hooks/temporal-state.py hooks/temporal-routing.py hooks/temporal-routing-tracker.py ~/.claude/hooks/
-cp mcp/temporal-pattern.py mcp/temporal-staleness.py mcp/temporal-future.py ~/.claude/mcp/
-chmod +x ~/.claude/hooks/*.sh ~/.claude/hooks/*.py ~/.claude/mcp/*.py
+# 1. Install every hook and MCP server (copies hooks/ and mcp/ into ~/.claude,
+#    marks them executable). Re-run it to upgrade; it never touches your
+#    preferences, which live in ~/.config/kairos/config.json.
+./install.sh
 
 # 2. Merge the UserPromptSubmit and PostToolUse entries from
 #    templates/settings.json into your ~/.claude/settings.json. Register the
@@ -170,8 +168,13 @@ chmod +x ~/.claude/hooks/*.sh ~/.claude/hooks/*.py ~/.claude/mcp/*.py
 #    servers in ~/.claude.json.
 #    Don't overwrite, you probably have other hooks, permissions, and MCPs.
 
-# 3. Restart Claude Code or open /hooks once so the watcher picks it up.
+# 3. Optional: preferences. Copy templates/kairos-config.example.json to
+#    ~/.config/kairos/config.json and edit (see Configuration below).
+
+# 4. Restart Claude Code or open /hooks once so the watcher picks it up.
 ```
+
+The install is verified by `tests/test_install.py`, which runs the script into a temporary home and executes every installed hook from that layout.
 
 Verify live: next message to Claude should arrive with something like `2026-04-17 23:55:18 CEST` prepended as a system reminder.
 
@@ -197,17 +200,39 @@ Table-driven unit tests over the classification primitives (cadence, phase, time
 python3 -m unittest tests.test_temporal_lib
 ```
 
+## Configuration
+
+One file, read by every hook, MCP server and harness adapter: `~/.config/kairos/config.json` (point `KAIROS_CONFIG` elsewhere if you like). Precedence per knob is env `KAIROS_<KEY>`, then the file, then the built-in default. Keep local preferences here, never in an installed hook: hooks are copies, and a reinstall or a fleet converge re-copies them.
+
+| Key | Default | What |
+|---|---|---|
+| `future_inject` | `true` | Emit the `[obligations]` line (Layer 5 injection) |
+| `staleness_inject` | `true` | Emit the `[staleness]` line (Layer 3 injection) |
+| `future_horizon_days` | `7` | Upcoming window for the obligations line |
+| `memory_db` | see below | Mnemos store read for expiring memories |
+| `tasks_db` | `~/work/tasks.db` | Task database read for obligations |
+| `state_dir` | `~/.claude/state` | Routing state, tracker log, thread rings |
+| `history_backend` | `transcript` | `transcript` (Claude Code) or `ring` (adapter harnesses) |
+| `ring_stale_seconds` | `2592000` (30d) | Prune threshold for abandoned thread rings |
+| `pattern_sources` | `transcripts` | Add `ring` to include adapter-harness prompts in Layer 4 |
+| `logged_only_suggests` | `temporal_future_query-first,temporal_staleness_audit-first` | Advisories kept in the log but not emitted |
+
+`memory_db` resolves in this order: `KAIROS_MEMORY_DB`, the config key, Mnemos's own `MNEMOS_DB`, then whichever of `~/work/memory.db` and `~/.mnemos/memory.db` exists (work store first: on hosts whose live store is under `~/work`, the `~/.mnemos` file is usually an empty first-run leftover). Set it explicitly; the fallback chain is for zero-config first runs. Template: `templates/kairos-config.example.json`.
+
 ## Environment variables
 
 | Variable | Default | What |
 |---|---|---|
+| `KAIROS_CONFIG` | `~/.config/kairos/config.json` | Where the configuration file lives |
+| `KAIROS_FUTURE_INJECT` / `KAIROS_STALENESS_INJECT` | `1` | Env form of `future_inject` / `staleness_inject` (`0` disables) |
+| `KAIROS_FUTURE_HORIZON_DAYS` | `7` | Env form of `future_horizon_days` |
 | `CLAUDE_KIT_STATE_DIR` | `~/.claude/state/` | Where routing state file and tracker log live |
 | `CLAUDE_KIT_TRANSCRIPT_MAX_IDLE_SECONDS` | `14400` (4h) | How stale a transcript can be before fallback path gives up |
 | `CLAUDE_KIT_LOG_ROTATE_BYTES` | `10485760` (10 MB) | When tracker log rotates |
 | `CLAUDE_KIT_LOG_KEEP_ROTATIONS` | `3` | How many rotated logs to keep before deletion |
 | `CLAUDE_TRAINING_CUTOFF` | `2026-01-01` | Date staleness MCP measures elapsed days against |
-| `KAIROS_TASKS_DB` | `~/work/tasks.db` | Task database read by Layer 5 (temporal-future MCP) |
-| `KAIROS_MEMORY_DB` | `~/work/memory.db` | Memory database read by Layer 5 for expiring memories |
+| `KAIROS_TASKS_DB` | config `tasks_db`, else `~/work/tasks.db` | Task database read by Layer 5 (temporal-future MCP) |
+| `KAIROS_MEMORY_DB` | see Configuration | Memory database read by Layer 5 for expiring memories |
 
 ## time.sh vs. custom Layer-1 sources
 

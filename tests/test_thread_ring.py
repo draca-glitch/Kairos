@@ -162,7 +162,7 @@ class TestRingStore(RingTestCase):
     def test_stale_rings_pruned_on_record(self):
         self.seed("old-thread", [120])
         old_file = next(self.ring_dir().glob("*.json"))
-        stale = time.time() - temporal_lib.RING_STALE_SECONDS - 3600
+        stale = time.time() - temporal_lib.ring_stale_seconds() - 3600
         os.utime(old_file, (stale, stale))
         ring_record("fresh-thread")
         self.assertFalse(old_file.exists())

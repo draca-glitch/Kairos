@@ -38,14 +38,14 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from temporal_lib import compute_state, is_task_notification, parse_payload
+from temporal_lib import compute_state, is_task_notification, parse_payload, setting, state_dir
 from keywords import (
     R7_TRIGGER_KEYWORDS as STALENESS_TRIGGER_KEYWORDS,
     R8_TRIGGER_KEYWORDS as FUTURE_TRIGGER_KEYWORDS,
 )
 
 
-STATE_DIR = Path(os.environ.get("CLAUDE_KIT_STATE_DIR", str(Path.home() / ".claude" / "state")))
+STATE_DIR = state_dir()
 STATE_FILE = STATE_DIR / "temporal-routing-state.json"
 
 # Advisories demoted to logged-only: still written to the state file so the
@@ -56,14 +56,13 @@ STATE_FILE = STATE_DIR / "temporal-routing-state.json"
 # temporal_staleness_audit-first was demoted 2026-06-10 for the same measured
 # failure (0% first, 7.7% any); Layer 3 is delivered by injection via
 # staleness-state.py since.
-LOGGED_ONLY_SUGGESTS = {
-    s.strip()
-    for s in os.environ.get(
-        "KAIROS_LOGGED_ONLY_SUGGESTS",
-        "temporal_future_query-first,temporal_staleness_audit-first",
-    ).split(",")
-    if s.strip()
-}
+def logged_only_suggests() -> set[str]:
+    raw = setting("logged_only_suggests",
+                  "temporal_future_query-first,temporal_staleness_audit-first") or ""
+    return {s.strip() for s in raw.split(",") if s.strip()}
+
+
+LOGGED_ONLY_SUGGESTS = logged_only_suggests()
 
 # Reason prefixes that exist only to explain a particular suggest; stripped
 # from the emitted line when their advisory is logged-only.

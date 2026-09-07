@@ -24,7 +24,9 @@ Reuses the temporal-future MCP's query logic (single source of truth);
 hooks/../mcp/temporal-future.py resolves correctly in both the repo and the
 installed ~/.claude/ layout. Never raises into the prompt path.
 
-Disable with KAIROS_FUTURE_INJECT=0. Horizon via KAIROS_FUTURE_HORIZON_DAYS.
+Disable with KAIROS_FUTURE_INJECT=0 or `"future_inject": false` in
+~/.config/kairos/config.json; horizon via KAIROS_FUTURE_HORIZON_DAYS or
+`"future_horizon_days"`. Env wins over the file.
 
 Usage in settings.json:
   "UserPromptSubmit": [{
@@ -33,10 +35,12 @@ Usage in settings.json:
 """
 
 import importlib.util
-import os
 import re
 import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from temporal_lib import setting, setting_bool
 
 # Forward-time triggers (en + sv), mirrors R8's intent. These only WIDEN the
 # gate to include upcoming items; they never fabricate an injection on their
@@ -47,7 +51,17 @@ FORWARD_KEYWORDS = re.compile(
     re.IGNORECASE,
 )
 
-HORIZON_DAYS = int(os.environ.get("KAIROS_FUTURE_HORIZON_DAYS", "7"))
+
+
+def inject_enabled() -> bool:
+    return setting_bool("future_inject", True)
+
+
+def horizon_days() -> int:
+    try:
+        return int(setting("future_horizon_days", "7"))
+    except ValueError:
+        return 7
 
 
 def load_future_module():
@@ -122,7 +136,7 @@ def main() -> int:
         raw = ""
     if "<task-notification>" in raw:
         return 0
-    if os.environ.get("KAIROS_FUTURE_INJECT", "1") != "1":
+    if not inject_enabled():
         return 0
 
     try:
@@ -130,7 +144,7 @@ def main() -> int:
         if mod is None:
             return 0
         widened = bool(FORWARD_KEYWORDS.search(raw))
-        result = mod.tool_temporal_future_query({"horizon_days": HORIZON_DAYS})
+        result = mod.tool_temporal_future_query({"horizon_days": horizon_days()})
         line = render(result, widened)
         if line:
             print(line)

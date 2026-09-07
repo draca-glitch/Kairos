@@ -74,6 +74,25 @@ def _import_is_real_user_prompt():
 _shared_filter = _import_is_real_user_prompt()
 
 
+def _setting_str(name: str, env_var: str, default: str) -> str:
+    """Shared config when temporal_lib resolved, else env-or-default."""
+    try:
+        from temporal_lib import setting
+        value = setting(name)
+        if value is not None:
+            return value
+    except Exception:
+        pass
+    return os.environ.get(env_var, default)
+
+
+def _setting_path(name: str, legacy_env: str, default: Path) -> Path:
+    legacy = os.environ.get(legacy_env, "").strip()
+    if legacy:
+        return Path(legacy).expanduser()
+    return Path(_setting_str(name, f"KAIROS_{name.upper()}", str(default))).expanduser()
+
+
 def _is_real_user_prompt(event: dict) -> bool:
     if _shared_filter is not None:
         return _shared_filter(event)
@@ -103,9 +122,8 @@ def _is_real_user_prompt(event: dict) -> bool:
 def _iter_ring_prompts(days_back: int):
     """Yield (utc_dt, ring_stem) from thread-ring files (adapter harnesses:
     Codex, Grok). Opt-in via KAIROS_PATTERN_SOURCES containing 'ring'."""
-    state_dir = Path(os.environ.get(
-        "CLAUDE_KIT_STATE_DIR", str(Path.home() / ".claude" / "state")
-    ))
+    state_dir = _setting_path("state_dir", "CLAUDE_KIT_STATE_DIR",
+                              Path.home() / ".claude" / "state")
     ring_dir = state_dir / "thread-rings"
     if not ring_dir.exists():
         return
@@ -131,7 +149,7 @@ def _iter_user_prompts(days_back: int):
     Sources: Claude transcripts (always) plus, when KAIROS_PATTERN_SOURCES
     includes 'ring', the thread-ring timestamps written by harness adapters.
     Default stays transcripts-only."""
-    sources = os.environ.get("KAIROS_PATTERN_SOURCES", "transcripts")
+    sources = _setting_str("pattern_sources", "KAIROS_PATTERN_SOURCES", "transcripts")
     if "ring" in {s.strip() for s in sources.split(",")}:
         yield from _iter_ring_prompts(days_back)
     if not PROJECTS_DIR.exists():

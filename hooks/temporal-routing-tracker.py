@@ -36,7 +36,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 
-STATE_DIR = Path(os.environ.get("CLAUDE_KIT_STATE_DIR", str(Path.home() / ".claude" / "state")))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+try:
+    from temporal_lib import state_dir as _state_dir
+    STATE_DIR = _state_dir()
+except Exception:
+    STATE_DIR = Path(os.environ.get("CLAUDE_KIT_STATE_DIR", str(Path.home() / ".claude" / "state")))
 STATE_FILE = STATE_DIR / "temporal-routing-state.json"
 LOG_FILE = STATE_DIR / "temporal-routing-log.jsonl"
 LOG_ROTATE_BYTES = int(os.environ.get("CLAUDE_KIT_LOG_ROTATE_BYTES", str(10 * 1024 * 1024)))

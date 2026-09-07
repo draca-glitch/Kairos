@@ -1,0 +1,13 @@
+{
+  "_comment": "Copy to ~/.config/kairos/config.json (or point KAIROS_CONFIG at it). Every key is optional; env KAIROS_<KEY> overrides the file. Values shown are the built-in defaults.",
+  "future_inject": true,
+  "staleness_inject": true,
+  "future_horizon_days": 7,
+  "memory_db": "~/work/memory.db",
+  "tasks_db": "~/work/tasks.db",
+  "state_dir": "~/.claude/state",
+  "history_backend": "transcript",
+  "ring_stale_seconds": 2592000,
+  "pattern_sources": "transcripts",
+  "logged_only_suggests": "temporal_future_query-first,temporal_staleness_audit-first"
+}

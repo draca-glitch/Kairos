@@ -8,6 +8,51 @@ The kit is pre-1.0: minor bumps may include incompatible changes when the cost o
 
 Next probable: a controlled with-vs-without-Kairos benchmark on time-shaped reasoning tasks to upgrade the paper's "constitutive" claim from architectural assertion to measured outcome.
 
+## [0.11.0] - 2026-09-07
+
+Three of the six findings from an external review of the deployed kit (the
+other three land in 0.12.0 and 0.13.0). All three are about the same thing:
+a setting that lived in the wrong place.
+
+### Added
+- **Shared configuration file.** `~/.config/kairos/config.json` (or
+  `KAIROS_CONFIG`) is read by every hook, MCP server and harness adapter
+  through one resolver in `temporal_lib` (`setting`, `setting_bool`,
+  `memory_db_path`, `tasks_db_path`, `state_dir`, `history_backend`).
+  Precedence per knob: env `KAIROS_<KEY>`, then the file, then the built-in
+  default. The reviewer had disabled the obligations banner by editing the
+  installed `future-state.py`; the README install and the fleet converge
+  both re-copy hooks from the checkout, so that preference was one upgrade
+  away from silently coming back. It now lives in the file as
+  `"future_inject": false` and survives any reinstall. Keys:
+  `future_inject`, `staleness_inject`, `future_horizon_days`, `memory_db`,
+  `tasks_db`, `state_dir`, `history_backend`, `ring_stale_seconds`,
+  `pattern_sources`, `logged_only_suggests`. Template in
+  `templates/kairos-config.example.json`.
+- **`install.sh`.** Copies every file under `hooks/` and `mcp/` into a
+  Claude home and marks them executable. The README quick start listed four
+  of the seven hooks and omitted `keywords.py`, which `staleness-state.py`
+  imports, so a clean install per the docs either lacked two injection
+  layers or crashed one. `tests/test_install.py` runs the script into a
+  temporary home and executes every installed hook from that layout, so the
+  install cannot drift from the tree again. `templates/settings.json` now
+  registers `staleness-state.py` and `future-state.py` too.
+
+### Fixed
+- **The memory database is resolved once, and no longer guessed per
+  adapter.** Both harness adapters preferred `~/.mnemos/memory.db` whenever
+  it existed. On a host whose live store is `~/work/memory.db`, the
+  `~/.mnemos` file is typically an empty first-run leftover, so the Codex
+  chain had been rendering its obligations line from a store with zero rows.
+  The adapters no longer set DB paths; `memory_db_path()` takes
+  `KAIROS_MEMORY_DB`, then config `memory_db`, then Mnemos's own
+  `MNEMOS_DB`, then whichever of `~/work/memory.db` and `~/.mnemos/memory.db`
+  exists, work store first. The temporal-future MCP server used a third,
+  different default; it now calls the same resolver.
+- Documentation said 122 tests; the suite was at 173. It is 204 after this
+  release (31 new), and the count is no longer stated anywhere it can rot.
+
+
 ## [0.10.1] - 2026-08-20
 
 ### Fixed

@@ -78,7 +78,9 @@ per prompt, after the hook chain, same contract as the Codex adapter.
 ## Env knobs
 
 Same as the Codex adapter: `KAIROS_HOOKS_DIR`, `CLAUDE_KIT_STATE_DIR`,
-`KAIROS_MEMORY_DB`, `KAIROS_TASKS_DB`, `KAIROS_RING_STALE_SECONDS`.
+`KAIROS_RING_STALE_SECONDS`. DB paths and preferences come from
+`~/.config/kairos/config.json` (`memory_db`, `tasks_db`, `future_inject`,
+...), read by the hooks themselves; env `KAIROS_*` overrides per knob.
 
 ## Expected behavior
 

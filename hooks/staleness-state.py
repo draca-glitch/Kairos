@@ -22,7 +22,8 @@ Reuses the temporal-staleness MCP module (single source of truth);
 hooks/../mcp/temporal-staleness.py resolves in both the repo and the
 installed ~/.claude/ layout. Never raises into the prompt path.
 
-Disable with KAIROS_STALENESS_INJECT=0.
+Disable with KAIROS_STALENESS_INJECT=0 or `"staleness_inject": false` in
+~/.config/kairos/config.json. Env wins over the file.
 
 Usage in settings.json:
   "UserPromptSubmit": [{
@@ -32,13 +33,17 @@ Usage in settings.json:
 
 import importlib.util
 import json
-import os
 import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from keywords import R7_TRIGGER_KEYWORDS
+from temporal_lib import setting_bool
+
+
+def inject_enabled() -> bool:
+    return setting_bool("staleness_inject", True)
 
 TRIGGER_RE = re.compile(
     r"\b(?:" + "|".join(re.escape(kw) for kw in R7_TRIGGER_KEYWORDS) + r")\b"
@@ -80,7 +85,7 @@ def main() -> int:
         raw = sys.stdin.read()
     except Exception:
         raw = ""
-    if os.environ.get("KAIROS_STALENESS_INJECT", "1") != "1":
+    if not inject_enabled():
         return 0
     try:
         payload = json.loads(raw)

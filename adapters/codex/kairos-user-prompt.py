@@ -18,9 +18,9 @@ Install: copy next to your Codex config (e.g. ~/.codex/hooks/) and register in
 Env knobs (all optional):
   KAIROS_HOOKS_DIR       hook scripts location (default ~/.claude/hooks)
   CLAUDE_KIT_STATE_DIR   kit state dir (default ~/.claude/state)
-  KAIROS_MEMORY_DB       Mnemos db for future-state (default: ~/.mnemos/memory.db
-                         if present, else ~/work/memory.db)
-  KAIROS_TASKS_DB        tasks db for future-state (default ~/work/tasks.db)
+  KAIROS_MEMORY_DB       Mnemos db for future-state; prefer setting memory_db in
+                         ~/.config/kairos/config.json (see hooks/temporal_lib.py)
+  KAIROS_TASKS_DB        tasks db for future-state; prefer tasks_db in the config
 """
 
 from __future__ import annotations
@@ -99,12 +99,11 @@ def apply_env_defaults() -> None:
     home = Path.home()
     os.environ.setdefault("KAIROS_HISTORY_BACKEND", "ring")
     os.environ.setdefault("CLAUDE_KIT_STATE_DIR", str(home / ".claude" / "state"))
-    mnemos_db = home / ".mnemos" / "memory.db"
-    os.environ.setdefault(
-        "KAIROS_MEMORY_DB",
-        str(mnemos_db if mnemos_db.exists() else home / "work" / "memory.db"),
-    )
-    os.environ.setdefault("KAIROS_TASKS_DB", str(home / "work" / "tasks.db"))
+    # DB paths are NOT defaulted here: the hooks resolve them through
+    # temporal_lib (env, then ~/.config/kairos/config.json, then MNEMOS_DB,
+    # then the conventional locations). An adapter-level guess used to prefer
+    # ~/.mnemos/memory.db whenever it existed, which on a host whose live
+    # store is under ~/work meant silently reading an empty leftover.
 
 
 def main() -> int:

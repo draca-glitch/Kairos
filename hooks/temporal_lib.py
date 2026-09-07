@@ -31,6 +31,86 @@ TRANSCRIPT_MAX_IDLE_SECONDS = int(
 DOW = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
 
+# --- Shared configuration ----------------------------------------------------
+#
+# Precedence for every knob: KAIROS_<NAME> env, then the config file, then the
+# built-in default. The file is ~/.config/kairos/config.json (override the
+# path with KAIROS_CONFIG). Local preferences belong in the file: hooks are
+# COPIES under ~/.claude/hooks and a reinstall or fleet converge re-copies
+# them, so a preference edited into a hook does not survive; a preference in
+# the file does, and every harness adapter reads the same file.
+
+_CONFIG_CACHE: dict | None = None
+
+
+def config_path() -> Path:
+    override = os.environ.get("KAIROS_CONFIG", "").strip()
+    if override:
+        return Path(override).expanduser()
+    return Path.home() / ".config" / "kairos" / "config.json"
+
+
+def reset_config_cache() -> None:
+    global _CONFIG_CACHE
+    _CONFIG_CACHE = None
+
+
+def load_config() -> dict:
+    global _CONFIG_CACHE
+    if _CONFIG_CACHE is None:
+        try:
+            data = json.loads(config_path().read_text(encoding="utf-8"))
+            _CONFIG_CACHE = data if isinstance(data, dict) else {}
+        except Exception:
+            _CONFIG_CACHE = {}
+    return _CONFIG_CACHE
+
+
+def setting(name: str, default: str | None = None) -> str | None:
+    """Resolve one knob as a string: env KAIROS_<NAME>, else config key
+    <name>, else default. Booleans in the file come back as "1"/"0" so
+    callers can treat env and file values identically."""
+    env = os.environ.get(f"KAIROS_{name.upper()}")
+    if env is not None and env.strip() != "":
+        return env.strip()
+    value = load_config().get(name.lower())
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    return str(value)
+
+
+def setting_bool(name: str, default: bool) -> bool:
+    raw = setting(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def memory_db_path() -> Path:
+    """The Mnemos store Layer 5 reads. Explicit configuration first, then
+    Mnemos's own MNEMOS_DB, then the first existing of the two conventional
+    locations, work store before the ~/.mnemos default: on a host where the
+    live store is under ~/work, ~/.mnemos/memory.db tends to be an empty
+    leftover from a first run, and preferring it reads nothing, silently."""
+    explicit = setting("memory_db") or os.environ.get("MNEMOS_DB", "").strip()
+    if explicit:
+        return Path(explicit).expanduser()
+    home = Path.home()
+    for candidate in (home / "work" / "memory.db", home / ".mnemos" / "memory.db"):
+        if candidate.exists():
+            return candidate
+    return home / "work" / "memory.db"
+
+
+def tasks_db_path() -> Path:
+    explicit = setting("tasks_db")
+    if explicit:
+        return Path(explicit).expanduser()
+    return Path.home() / "work" / "tasks.db"
+
+
 def parse_payload(raw: str) -> dict:
     try:
         return json.loads(raw)
@@ -87,15 +167,24 @@ def find_transcript(payload: dict | None = None) -> Path | None:
 
 RING_LIMIT = 20
 RING_DIR_NAME = "thread-rings"
-RING_STALE_SECONDS = int(os.environ.get("KAIROS_RING_STALE_SECONDS", str(30 * 86400)))
+
+
+def ring_stale_seconds() -> int:
+    try:
+        return int(setting("ring_stale_seconds", str(30 * 86400)))
+    except ValueError:
+        return 30 * 86400
 
 
 def history_backend() -> str:
-    return os.environ.get("KAIROS_HISTORY_BACKEND", "transcript").strip().lower()
+    return (setting("history_backend", "transcript") or "transcript").strip().lower()
 
 
 def state_dir() -> Path:
-    return Path(os.environ.get("CLAUDE_KIT_STATE_DIR", str(Path.home() / ".claude" / "state")))
+    legacy = os.environ.get("CLAUDE_KIT_STATE_DIR", "").strip()
+    if legacy:
+        return Path(legacy).expanduser()
+    return Path(setting("state_dir", str(Path.home() / ".claude" / "state"))).expanduser()
 
 
 def resolve_thread_id(payload: dict | None) -> str:
@@ -168,7 +257,7 @@ def ring_record(thread_id: str, when: datetime | None = None) -> None:
 
 
 def _prune_stale_rings(ring_dir: Path, keep: Path | None = None) -> None:
-    cutoff = time.time() - RING_STALE_SECONDS
+    cutoff = time.time() - ring_stale_seconds()
     try:
         for f in ring_dir.glob("*.json"):
             if keep is not None and f == keep:

@@ -19,6 +19,16 @@
             "type": "command",
             "command": "~/.claude/hooks/temporal-routing.py",
             "timeout": 2000
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/staleness-state.py",
+            "timeout": 2000
+          },
+          {
+            "type": "command",
+            "command": "~/.claude/hooks/future-state.py",
+            "timeout": 3000
           }
         ]
       }

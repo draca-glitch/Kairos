@@ -38,8 +38,29 @@ from datetime import date, datetime, timedelta
 from pathlib import Path
 
 
-TASKS_DB = Path(os.environ.get("KAIROS_TASKS_DB", str(Path.home() / "work" / "tasks.db")))
-MEMORY_DB = Path(os.environ.get("KAIROS_MEMORY_DB", str(Path.home() / "work" / "memory.db")))
+
+
+def _resolve_dbs() -> tuple[Path, Path]:
+    """Both DB paths come from temporal_lib's shared resolver (env, then
+    ~/.config/kairos/config.json, then MNEMOS_DB, then the conventional
+    locations). The library sits in ../hooks in both the repo and the
+    installed ~/.claude layout; a standalone deployment without it falls
+    back to env-or-default."""
+    for candidate in (Path(__file__).resolve().parent.parent / "hooks",
+                      Path.home() / ".claude" / "hooks"):
+        if (candidate / "temporal_lib.py").exists():
+            if str(candidate) not in sys.path:
+                sys.path.insert(0, str(candidate))
+            try:
+                from temporal_lib import memory_db_path, tasks_db_path
+                return tasks_db_path(), memory_db_path()
+            except Exception:
+                break
+    return (Path(os.environ.get("KAIROS_TASKS_DB", str(Path.home() / "work" / "tasks.db"))),
+            Path(os.environ.get("KAIROS_MEMORY_DB", str(Path.home() / "work" / "memory.db"))))
+
+
+TASKS_DB, MEMORY_DB = _resolve_dbs()
 
 
 # --- DB helpers ---

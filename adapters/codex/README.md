@@ -50,8 +50,8 @@ e.g. `env KAIROS_TASKS_DB=/srv/tasks.db /usr/bin/python3 ...`.
 |---|---|---|
 | `KAIROS_HOOKS_DIR` | `~/.claude/hooks` | where the Kairos hook scripts live |
 | `CLAUDE_KIT_STATE_DIR` | `~/.claude/state` | kit state dir (rings live under `thread-rings/`) |
-| `KAIROS_MEMORY_DB` | `~/.mnemos/memory.db` if present, else `~/work/memory.db` | Mnemos db for the obligations line |
-| `KAIROS_TASKS_DB` | `~/work/tasks.db` | tasks db for the obligations line |
+| `KAIROS_MEMORY_DB` | resolved by the hooks: config `memory_db`, then `MNEMOS_DB`, then `~/work/memory.db` if it exists, else `~/.mnemos/memory.db` | Mnemos db for the obligations line; set `memory_db` in `~/.config/kairos/config.json` |
+| `KAIROS_TASKS_DB` | config `tasks_db`, else `~/work/tasks.db` | tasks db for the obligations line |
 | `KAIROS_RING_STALE_SECONDS` | 30 days | prune threshold for abandoned rings |
 
 ## Expected behavior
