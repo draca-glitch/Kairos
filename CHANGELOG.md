@@ -8,6 +8,45 @@ The kit is pre-1.0: minor bumps may include incompatible changes when the cost o
 
 Next probable: a controlled with-vs-without-Kairos benchmark on time-shaped reasoning tasks to upgrade the paper's "constitutive" claim from architectural assertion to measured outcome.
 
+## [0.12.0] - 2026-09-07
+
+Findings 3 and 4 of the external review. The corpus is affected: every
+`[temporal-state]` line and every tracker record before this release
+measured the gap prompt-to-prompt, so a long assistant turn followed by a
+quick user reply was recorded as a reflective user. Records from this
+release on carry `gap_basis`, and analysis should treat the two eras
+separately.
+
+### Changed
+- **Measured timing is separated from inferred human state.** The gap that
+  cadence and phase classify on is now the user's own pause: measured from
+  the assistant's last reply when that timestamp exists (Claude Code stamps
+  every assistant transcript record, so this costs nothing there), else from
+  the previous prompt. The state line names its basis, `gap=40s(since-reply)`
+  or `gap=15m(since-prompt)`, shows the raw prompt-to-prompt time as `turn=`
+  when the two differ in kind, and suffixes cadence with `(turn-basis)` when
+  the reading could not exclude the assistant's own working time. Routing
+  reasons carry `basis=reply|turn` whenever a cadence rule fired, and the
+  state file and tracker records gain `gap_basis`, `reply_gap_str`,
+  `turn_gap_str`. `compute_state` keeps `gap_seconds` as the classification
+  gap and adds `turn_gap_seconds`, `reply_gap_seconds`, `gap_basis`.
+- **R5 (reflective and long prompt, write more) requires reply basis.** On
+  turn basis a "reflective" pause may be fourteen minutes of tool calls,
+  which says nothing about the user. R3 (rapid-fire, trim ceremony) fires on
+  either basis, since a short prompt-to-prompt time bounds the user's gap
+  from above. Its comment now states what it always meant: trim preamble
+  and task bookkeeping, never the substance the prompt asks for. Cadence is
+  a reading of rhythm; content wins.
+
+### Added
+- **`hooks/turn-end.py`** for harnesses on the thread-ring backend. Claude
+  Code needs no hook (transcripts carry the timestamps); Codex, Grok and
+  anything using `adapters/` have no transcript, so until the harness runs
+  this on its turn-end event their cadence stays on turn basis and is
+  labelled as such. `ring_record_reply` / `ring_load_replies` store the
+  timestamps alongside the prompt ring in the same file. 16 new tests,
+  221 pass.
+
 ## [0.11.0] - 2026-09-07
 
 Three of the six findings from an external review of the deployed kit (the

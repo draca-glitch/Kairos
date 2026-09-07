@@ -95,7 +95,7 @@ class TestRulesR1ToR6(unittest.TestCase):
     def test_r5_reflective_long_prompt_write_more(self):
         long_prompt = "x" * 250
         suggests, _, _ = routing.evaluate_rules(
-            _state(long_prompt, cadence="reflective-pace")
+            _state(long_prompt, cadence="reflective-pace", gap_basis="reply")
         )
         self.assertIn("write-longer-reasoning-prose", suggests)
 

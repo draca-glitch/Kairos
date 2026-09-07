@@ -108,11 +108,17 @@ def evaluate_rules(state: dict) -> tuple[list[str], list[str], list[str]]:
         suggests.append("flag-staleness")
         reasons.append("cross-day=yes")
 
-    # R3: rapid-fire → trim overhead
+    basis = state.get("gap_basis")
+    cadence_rule_fired = False
+
+    # R3: rapid-fire → trim overhead. Ceremony only: preamble, task
+    # bookkeeping. Never the substance the prompt asks for; a one-line
+    # question can still deserve a long answer.
     if cadence in {"rapid-fire", "very-rapid-fire"}:
         skips.append("TaskCreate-overhead")
         skips.append("preamble")
         reasons.append(f"cadence={cadence}")
+        cadence_rule_fired = True
 
     # R4: session-start → ground in project context
     if phase == "session-start":
@@ -122,14 +128,21 @@ def evaluate_rules(state: dict) -> tuple[list[str], list[str], list[str]]:
     # R5: reflective + substantial prompt → spend tokens on reasoning prose
     # (extended-thinking is a request-level setting the model can't toggle,
     # so the actionable advice is to write longer reasoning in the response).
-    if cadence == "reflective-pace" and prompt_chars > 200:
+    # Requires the user's own gap: on turn basis a "reflective" pause may be
+    # the assistant's tool time, which says nothing about the user.
+    if cadence == "reflective-pace" and prompt_chars > 200 and basis == "reply":
         suggests.append("write-longer-reasoning-prose")
         reasons.append(f"reflective+chars={prompt_chars}")
+        cadence_rule_fired = True
 
     # R6: late-night resumption → confirmation posture
     if tod == "late-night" and cadence in {"resumed-after-break", "resumed-after-long-gap"}:
         suggests.append("confirm-before-destructive")
         reasons.append(f"tod=late-night+{cadence}")
+        cadence_rule_fired = True
+
+    if cadence_rule_fired and basis:
+        reasons.append(f"basis={basis}")
 
     # R7: prompt mentions time-volatile tech topics → consult Layer 3
     prompt_lower = (state.get("prompt_text") or "").lower()
@@ -180,6 +193,9 @@ def write_state_file(state: dict, suggests: list[str], skips: list[str], reasons
             "ts": state["now_local"].isoformat(),
             "session_id": session_id,
             "gap_str": state.get("gap_str"),
+            "gap_basis": state.get("gap_basis"),
+            "reply_gap_str": state.get("reply_gap_str"),
+            "turn_gap_str": state.get("turn_gap_str"),
             "cadence": state.get("cadence"),
             "phase": state.get("phase"),
             "tod": state.get("tod"),

@@ -211,49 +211,72 @@ def _ring_path(thread_id: str) -> Path:
     return state_dir() / RING_DIR_NAME / f"{digest}.json"
 
 
-def ring_load(thread_id: str, limit: int = RING_LIMIT) -> list[datetime]:
-    """Prior prompt timestamps for a thread, oldest first. Corrupt or missing
-    state degrades to an empty list (session-start)."""
-    if not thread_id:
-        return []
+def _ring_read(thread_id: str) -> dict:
     try:
         data = json.loads(_ring_path(thread_id).read_text(encoding="utf-8"))
-        raw = data.get("timestamps")
+        return data if isinstance(data, dict) else {}
     except Exception:
-        return []
-    timestamps = []
+        return {}
+
+
+def _parse_stamps(raw, limit: int) -> list[datetime]:
+    stamps = []
     for item in raw if isinstance(raw, list) else []:
         try:
             dt = datetime.fromisoformat(str(item))
         except Exception:
             continue
         if dt.tzinfo is not None:
-            timestamps.append(dt)
-    timestamps.sort()
-    return timestamps[-limit:]
+            stamps.append(dt)
+    stamps.sort()
+    return stamps[-limit:]
 
 
-def ring_record(thread_id: str, when: datetime | None = None) -> None:
-    """Append one prompt timestamp to the thread ring, atomically. Call ONCE
-    per prompt, after the hook chain has read the previous state."""
+def ring_load(thread_id: str, limit: int = RING_LIMIT) -> list[datetime]:
+    """Prior prompt timestamps for a thread, oldest first. Corrupt or missing
+    state degrades to an empty list (session-start)."""
+    if not thread_id:
+        return []
+    return _parse_stamps(_ring_read(thread_id).get("timestamps"), limit)
+
+
+def ring_load_replies(thread_id: str, limit: int = RING_LIMIT) -> list[datetime]:
+    """Assistant turn-end timestamps for a thread, oldest first. Empty unless
+    the harness runs hooks/turn-end.py, in which case cadence can classify on
+    the user's own gap instead of prompt-to-prompt."""
+    if not thread_id:
+        return []
+    return _parse_stamps(_ring_read(thread_id).get("replies"), limit)
+
+
+def _ring_append(thread_id: str, key: str, when: datetime | None) -> None:
     if not thread_id:
         return
     when = when or datetime.now(timezone.utc)
     path = _ring_path(thread_id)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        timestamps = ring_load(thread_id)
-        timestamps.append(when)
-        timestamps = timestamps[-RING_LIMIT:]
+        data = _ring_read(thread_id)
+        stamps = _parse_stamps(data.get(key), RING_LIMIT)
+        stamps.append(when)
+        data[key] = [t.isoformat() for t in stamps[-RING_LIMIT:]]
         tmp = path.parent / f"{path.name}.{os.getpid()}.tmp"
-        tmp.write_text(
-            json.dumps({"timestamps": [t.isoformat() for t in timestamps]}),
-            encoding="utf-8",
-        )
+        tmp.write_text(json.dumps(data), encoding="utf-8")
         os.replace(tmp, path)
     except Exception:
         return
     _prune_stale_rings(path.parent, keep=path)
+
+
+def ring_record(thread_id: str, when: datetime | None = None) -> None:
+    """Append one prompt timestamp to the thread ring, atomically. Call ONCE
+    per prompt, after the hook chain has read the previous state."""
+    _ring_append(thread_id, "timestamps", when)
+
+
+def ring_record_reply(thread_id: str, when: datetime | None = None) -> None:
+    """Append one assistant turn-end timestamp. Called by hooks/turn-end.py."""
+    _ring_append(thread_id, "replies", when)
 
 
 def _prune_stale_rings(ring_dir: Path, keep: Path | None = None) -> None:
@@ -294,8 +317,23 @@ def is_real_user_prompt(event: dict) -> bool:
     return False
 
 
-def collect_user_prompt_timestamps(transcript: Path, limit: int = 20) -> list[datetime]:
-    timestamps = []
+def _event_time(event: dict) -> datetime | None:
+    ts = event.get("timestamp")
+    if not ts:
+        return None
+    try:
+        return datetime.fromisoformat(str(ts).replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+def collect_turn_timestamps(transcript: Path, limit: int = 20) -> tuple[list[datetime], list[datetime]]:
+    """(prompts, replies): real user prompts and every assistant event, each
+    oldest first. Claude Code stamps every assistant record, so the last
+    assistant event before a prompt is when the previous turn ended, which is
+    what the user's own gap is measured from. Replies are trimmed to those
+    since the oldest kept prompt."""
+    prompts, replies = [], []
     try:
         with open(transcript, "r", encoding="utf-8", errors="replace") as f:
             for line in f:
@@ -303,20 +341,26 @@ def collect_user_prompt_timestamps(transcript: Path, limit: int = 20) -> list[da
                     e = json.loads(line)
                 except Exception:
                     continue
-                if not is_real_user_prompt(e):
-                    continue
-                ts = e.get("timestamp")
-                if not ts:
-                    continue
-                try:
-                    dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-                except Exception:
-                    continue
-                timestamps.append(dt)
+                if is_real_user_prompt(e):
+                    dt = _event_time(e)
+                    if dt is not None:
+                        prompts.append(dt)
+                elif e.get("type") == "assistant":
+                    dt = _event_time(e)
+                    if dt is not None:
+                        replies.append(dt)
     except FileNotFoundError:
-        return []
-    timestamps.sort()
-    return timestamps[-limit:]
+        return [], []
+    prompts.sort()
+    prompts = prompts[-limit:]
+    replies.sort()
+    if prompts:
+        replies = [r for r in replies if r >= prompts[0]]
+    return prompts, replies
+
+
+def collect_user_prompt_timestamps(transcript: Path, limit: int = 20) -> list[datetime]:
+    return collect_turn_timestamps(transcript, limit)[0]
 
 
 def humanize_gap(seconds: float) -> str:
@@ -344,6 +388,36 @@ def tod_bucket(local_dt: datetime) -> str:
     if 18 <= h < 22:
         return "evening"
     return "night"
+
+
+def user_gaps(prompts: list[datetime], replies: list[datetime], now: datetime
+              ) -> tuple[list[float], str | None, float | None]:
+    """Gaps for classification, newest first, measured from the user's side.
+
+    Entry 0 is the gap before the prompt being submitted now; entry i is the
+    gap before prompt -i. Each gap runs from the assistant's last reply in
+    that interval when one exists, else from the previous prompt. The basis
+    ("reply" or "turn") describes entry 0 only: it is the honest label for
+    whether the current cadence reading is the user's own pause or includes
+    the assistant's working time. The third value is the raw prompt-to-prompt
+    gap for display. Empty history returns ([], None, None)."""
+    if not prompts:
+        return [], None, None
+    replies = sorted(replies)
+    turn_gap = (now - prompts[-1]).total_seconds()
+    last_reply = replies[-1] if replies else None
+    if last_reply is not None and last_reply > prompts[-1]:
+        gaps = [(now - last_reply).total_seconds()]
+        basis = "reply"
+    else:
+        gaps = [turn_gap]
+        basis = "turn"
+    for i in range(len(prompts) - 1, 0, -1):
+        prev_prompt, this_prompt = prompts[i - 1], prompts[i]
+        between = [r for r in replies if prev_prompt < r < this_prompt]
+        anchor = max(between) if between else prev_prompt
+        gaps.append((this_prompt - anchor).total_seconds())
+    return gaps, basis, turn_gap
 
 
 def classify_cadence(gaps_seconds: list[float]) -> str:
@@ -382,8 +456,14 @@ def compute_state(payload: dict | None = None) -> dict:
     """Return canonical state dict consumed by all temporal hooks.
 
     Keys: transcript_available, prompts_count, now_utc, now_local, now_str,
-    tod, gap_seconds, gap_str, cross_day, cadence, phase, gaps_seconds,
+    tod, gap_seconds, gap_str, gap_basis, reply_gap_seconds, reply_gap_str,
+    turn_gap_seconds, turn_gap_str, cross_day, cadence, phase, gaps_seconds,
     prompt_text.
+
+    gap_seconds is the user's gap (since the assistant's last reply when that
+    timestamp exists, else since the previous prompt) and is what cadence and
+    phase classify on; gap_basis says which. turn_gap_seconds is always the
+    raw prompt-to-prompt measurement.
     """
     now_utc = datetime.now(timezone.utc)
     now_local = now_utc.astimezone()
@@ -396,6 +476,11 @@ def compute_state(payload: dict | None = None) -> dict:
         "tod": tod_bucket(now_local),
         "gap_seconds": None,
         "gap_str": None,
+        "gap_basis": None,
+        "reply_gap_seconds": None,
+        "reply_gap_str": None,
+        "turn_gap_seconds": None,
+        "turn_gap_str": None,
         "cross_day": False,
         "cadence": "session-start",
         "phase": "session-start",
@@ -406,32 +491,30 @@ def compute_state(payload: dict | None = None) -> dict:
     if history_backend() == "ring":
         # The ring is available by construction; an empty one is session-start.
         state["transcript_available"] = True
-        prompts = ring_load(resolve_thread_id(payload))
+        thread_id = resolve_thread_id(payload)
+        prompts = ring_load(thread_id)
         state["prompts_count"] = len(prompts)
         if not prompts:
             return state
-        return _apply_prompt_history(state, prompts, now_utc, now_local)
+        return _apply_prompt_history(state, prompts, ring_load_replies(thread_id), now_utc, now_local)
 
     transcript = find_transcript(payload)
     if not transcript:
         return state
     state["transcript_available"] = True
 
-    prompts = collect_user_prompt_timestamps(transcript)
+    prompts, replies = collect_turn_timestamps(transcript)
     state["prompts_count"] = len(prompts)
     if not prompts:
         return state
-    return _apply_prompt_history(state, prompts, now_utc, now_local)
+    return _apply_prompt_history(state, prompts, replies, now_utc, now_local)
 
 
 def _apply_prompt_history(
-    state: dict, prompts: list[datetime], now_utc: datetime, now_local: datetime
+    state: dict, prompts: list[datetime], replies: list[datetime],
+    now_utc: datetime, now_local: datetime,
 ) -> dict:
-    gaps = []
-    prev = now_utc
-    for ts in reversed(prompts):
-        gaps.append((prev - ts).total_seconds())
-        prev = ts
+    gaps, basis, turn_gap = user_gaps(prompts, replies, now_utc)
 
     last_gap = gaps[0]
     last_prompt_local = prompts[-1].astimezone()
@@ -439,6 +522,12 @@ def _apply_prompt_history(
 
     state["gap_seconds"] = last_gap
     state["gap_str"] = humanize_gap(last_gap)
+    state["gap_basis"] = basis
+    state["turn_gap_seconds"] = turn_gap
+    state["turn_gap_str"] = humanize_gap(turn_gap)
+    if basis == "reply":
+        state["reply_gap_seconds"] = last_gap
+        state["reply_gap_str"] = state["gap_str"]
     state["cross_day"] = cross_day
     state["cadence"] = classify_cadence(gaps)
     state["phase"] = classify_phase(gaps, cross_day)

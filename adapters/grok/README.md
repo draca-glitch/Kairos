@@ -91,3 +91,11 @@ Same as the Codex adapter: `KAIROS_HOOKS_DIR`, `CLAUDE_KIT_STATE_DIR`,
   thread id, not a shared "default")
 - Optional: include ring timestamps in temporal-pattern analytics with
   `KAIROS_PATTERN_SOURCES=transcripts,ring`
+
+## Turn-end timing (0.12.0)
+
+Without a reply timestamp the hooks measure the gap prompt-to-prompt and
+label cadence `(turn-basis)`. If this harness exposes a turn-end (Stop)
+event, run `hooks/turn-end.py` on it with `KAIROS_HISTORY_BACKEND=ring` and
+the same thread id the prompt adapter uses; cadence then classifies on the
+user's own pause and the label switches to `since-reply`.

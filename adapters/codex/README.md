@@ -61,3 +61,11 @@ e.g. `env KAIROS_TASKS_DB=/srv/tasks.db /usr/bin/python3 ...`.
 - Separate threads are isolated (per-thread rings)
 - Long gaps and cross-day gaps classify exactly as in Claude Code
 - Corrupt or missing ring state degrades to session-start, never crashes
+
+## Turn-end timing (0.12.0)
+
+Without a reply timestamp the hooks measure the gap prompt-to-prompt and
+label cadence `(turn-basis)`. If this harness exposes a turn-end (Stop)
+event, run `hooks/turn-end.py` on it with `KAIROS_HISTORY_BACKEND=ring` and
+the same thread id the prompt adapter uses; cadence then classifies on the
+user's own pause and the label switches to `since-reply`.

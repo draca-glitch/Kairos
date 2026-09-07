@@ -128,6 +128,9 @@ def main() -> int:
         "cadence": state.get("cadence"),
         "phase": state.get("phase"),
         "gap_str": state.get("gap_str"),
+        "gap_basis": state.get("gap_basis"),
+        "reply_gap_str": state.get("reply_gap_str"),
+        "turn_gap_str": state.get("turn_gap_str"),
     }
     if foreign:
         record["advisory_dropped"] = "foreign-session"

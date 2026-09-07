@@ -8,7 +8,15 @@ gives the *shape* of time: gap-since-last, cross-day status, time-of-day
 bucket, input-cadence, session-phase.
 
 Output format (single line, low-token):
-  [temporal-state] gap=11h17m | cross-day=yes | now=Sat_02:02_CEST(late-night) | cadence=resumed-after-long-gap | phase=interruption-pivot
+  [temporal-state] gap=40s(since-reply) | turn=15m | cross-day=no | now=Mon_08:00_CEST(early-morning) | cadence=active-collaboration | phase=continuing
+
+gap is the user's own pause, measured from the assistant's last reply when
+that timestamp exists (label since-reply) and otherwise from the previous
+prompt (label since-prompt). turn is the raw prompt-to-prompt time and is
+shown only when it differs in kind from gap. cadence is an inference from
+gap; when gap could only be measured prompt-to-prompt it carries
+(turn-basis), because a long "reflective" pause may be the assistant's own
+tool time rather than the user thinking.
 
 Logic lives in temporal_lib.py, this hook is just the renderer.
 
@@ -40,15 +48,25 @@ def main() -> int:
         print(f"[temporal-state] now={state['now_str']}({state['tod']}) | phase=session-start")
         return 0
 
-    parts = [
-        f"gap={state['gap_str']}",
+    print(render_line(state))
+    return 0
+
+
+def render_line(state: dict) -> str:
+    basis = state.get("gap_basis")
+    parts = [f"gap={state['gap_str']}({'since-reply' if basis == 'reply' else 'since-prompt'})"]
+    if basis == "reply":
+        parts.append(f"turn={state['turn_gap_str']}")
+    cadence = state["cadence"]
+    if basis == "turn":
+        cadence += "(turn-basis)"
+    parts += [
         f"cross-day={'yes' if state['cross_day'] else 'no'}",
         f"now={state['now_str']}({state['tod']})",
-        f"cadence={state['cadence']}",
+        f"cadence={cadence}",
         f"phase={state['phase']}",
     ]
-    print(f"[temporal-state] " + " | ".join(parts))
-    return 0
+    return "[temporal-state] " + " | ".join(parts)
 
 
 if __name__ == "__main__":
