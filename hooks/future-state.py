@@ -17,8 +17,8 @@ The gate is STATE, not keywords. It speaks only when something is actually
 overdue or due today (the case worth surfacing unprompted), which makes it
 immune to the keyword-false-positive disease that sank R8 ("I'll do it
 tomorrow" does not manufacture an obligation). Forward-time keywords in the
-prompt merely WIDEN the gate to also include upcoming-within-horizon items,
-so "what's left this week" surfaces the week.
+prompt merely WIDEN the gate to also include upcoming-within-horizon tasks
+and memories about to expire, so "what's left this week" surfaces the week.
 
 Reuses the temporal-future MCP's query logic (single source of truth);
 hooks/../mcp/temporal-future.py resolves correctly in both the repo and the
@@ -82,7 +82,7 @@ def render(result: dict, widened: bool) -> str | None:
     """Build the [obligations] line, or None to stay silent.
 
     Always-on gate: overdue or due-today. Widened gate (forward keywords
-    present): also upcoming-within-horizon.
+    present): also upcoming-within-horizon tasks and expiring memories.
     """
     tasks = result.get("tasks", {})
     if not tasks.get("available"):
@@ -91,8 +91,13 @@ def render(result: dict, widened: bool) -> str | None:
     overdue = counts.get("overdue", 0)
     due_today = counts.get("due_today", 0)
     upcoming = counts.get("upcoming_in_horizon", 0)
+    mems = result.get("expiring_memories", {})
+    expiring = mems.get("count", 0) if mems.get("available") else 0
 
-    if not (overdue or due_today or (widened and upcoming)):
+    # Always-on gate: overdue or due today. Widened gate (the prompt looks
+    # ahead): also upcoming tasks and memories about to expire; a memory
+    # with days left is forward-looking state in exactly the same sense.
+    if not (overdue or due_today or (widened and (upcoming or expiring))):
         return None
 
     parts = []
@@ -122,9 +127,8 @@ def render(result: dict, widened: bool) -> str | None:
         area = nxt.get("area") or ""
         parts.append(f"next: '{title}' {when}" + (f" ({area})" if area else ""))
 
-    mems = result.get("expiring_memories", {})
-    if mems.get("available") and mems.get("count", 0) > 0:
-        parts.append(f"{mems['count']} memory(ies) expiring")
+    if expiring:
+        parts.append(f"{expiring} memory(ies) expiring")
 
     return "[obligations] " + " · ".join(parts) if parts else None
 

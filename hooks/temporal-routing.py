@@ -96,10 +96,17 @@ def evaluate_rules(state: dict) -> tuple[list[str], list[str], list[str]]:
     cross_day = state.get("cross_day", False)
     prompt_chars = len(state.get("prompt_text") or "")
 
+    basis = state.get("gap_basis")
+    # Set by every rule that read the gap or the cadence, so the emitted
+    # reason can say whether that reading was the user's own pause (reply)
+    # or prompt-to-prompt time that may include the assistant's work (turn).
+    cadence_rule_fired = False
+
     # R1: long gap → check memory first
     if gap >= 1800:
         suggests.append("memory_search-first")
         reasons.append(f"gap={state.get('gap_str')}")
+        cadence_rule_fired = True
 
     # R2: cross-day with substantial gap → memory + staleness flag
     if cross_day and gap >= 4 * 3600:
@@ -107,9 +114,7 @@ def evaluate_rules(state: dict) -> tuple[list[str], list[str], list[str]]:
             suggests.append("memory_search-first")
         suggests.append("flag-staleness")
         reasons.append("cross-day=yes")
-
-    basis = state.get("gap_basis")
-    cadence_rule_fired = False
+        cadence_rule_fired = True
 
     # R3: rapid-fire → trim overhead. Ceremony only: preamble, task
     # bookkeeping. Never the substance the prompt asks for; a one-line

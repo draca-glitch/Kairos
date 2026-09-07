@@ -8,6 +8,32 @@ The kit is pre-1.0: minor bumps may include incompatible changes when the cost o
 
 Next probable: a controlled with-vs-without-Kairos benchmark on time-shaped reasoning tasks to upgrade the paper's "constitutive" claim from architectural assertion to measured outcome.
 
+## [0.13.0] - 2026-09-07
+
+Finding 6 of the external review: measure decisions, not only tool
+adherence. The deterministic half is now a regression set; the behavioural
+half (did the model act on the context) remains the adherence log's job.
+
+### Added
+- **Scenario regression set, `tests/test_scenarios.py`.** Each scenario
+  builds a synthetic home (transcript with user and assistant timestamps,
+  tasks DB, memory DB, config) and runs the real UserPromptSubmit chain
+  from `hooks/` as subprocesses, asserting the injected lines and, just as
+  much, their absence. Nine scenarios: overnight resumption, rapid topic
+  switch, a long assistant turn followed by a quick reply, a deadline prompt
+  with overdue and upcoming tasks, an overdue task with no forward keywords,
+  an expiring memory, an ordinary continuation that must inject nothing
+  beyond the state line, a time-volatile topic, and a fresh session.
+
+### Fixed
+- Two defects the set found on its first run. Routing labelled its basis
+  only on cadence rules; R1 and R2 read the same user-side gap and now
+  label it too (`reason=gap=25h55m,cross-day=yes,basis=reply`). The
+  obligations gate never opened on memories alone: a prompt that looked
+  ahead with an expiring memory and no tasks due produced no line. The
+  widened gate now includes expiring memories, which are forward-looking
+  state in exactly the same sense as upcoming tasks. 9 new tests, 230 pass.
+
 ## [0.12.0] - 2026-09-07
 
 Findings 3 and 4 of the external review. The corpus is affected: every

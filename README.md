@@ -192,6 +192,14 @@ Reads the tracker's JSONL log and reports per-advisory adherence: when `skip=X` 
 
 Read-only. Closes the falsifiability claim: with this script, "Layer 6 shapes behavior" becomes a number, not a hypothesis.
 
+### `tests/test_scenarios.py`
+
+The decision regression set. Each scenario builds a synthetic home (transcript with user and assistant timestamps, tasks DB, memory DB, config), runs the real UserPromptSubmit chain from `hooks/` as subprocesses, and asserts the injected context: the lines the model would see, and their absence where nothing should speak. Overnight resumption, rapid topic switch, long assistant turn then quick reply, deadlines, expiring memories, ordinary continuation, volatile topics, fresh session. Whether the model then acts on the context is the behavioural half, measured in production by the adherence log.
+
+```bash
+python3 -m pytest tests/test_scenarios.py -q
+```
+
 ### `tests/test_temporal_lib.py`
 
 Table-driven unit tests over the classification primitives (cadence, phase, time-of-day, gap humanizer, prompt parsing). Hardens Layer 1+2 against regressions.
