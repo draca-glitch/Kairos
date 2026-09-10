@@ -8,6 +8,9 @@ The kit is pre-1.0: minor bumps may include incompatible changes when the cost o
 
 Next probable: a controlled with-vs-without-Kairos benchmark on time-shaped reasoning tasks to upgrade the paper's "constitutive" claim from architectural assertion to measured outcome.
 
+### Changed
+- Public author identity is Mikael Wedlund (`CITATION.cff`, LICENSE, README). The GitHub account remains `draca-glitch`.
+
 ## [0.13.0] - 2026-09-07
 
 Finding 6 of the external review: measure decisions, not only tool
