@@ -88,27 +88,41 @@ def setting_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def _first_existing(candidates) -> Path:
+    """First candidate that holds data, else the first that exists, else the
+    first. A 0-byte file is what sqlite3.connect() leaves at a path that did
+    not exist, so it must not shadow a real store further down the list."""
+    existing = [c for c in candidates if c.exists()]
+    for candidate in existing:
+        if candidate.stat().st_size > 0:
+            return candidate
+    return existing[0] if existing else candidates[0]
+
+
 def memory_db_path() -> Path:
     """The Mnemos store Layer 5 reads. Explicit configuration first, then
-    Mnemos's own MNEMOS_DB, then the first existing of the two conventional
-    locations, work store before the ~/.mnemos default: on a host where the
-    live store is under ~/work, ~/.mnemos/memory.db tends to be an empty
-    leftover from a first run, and preferring it reads nothing, silently."""
+    Mnemos's own MNEMOS_DB, then the first existing conventional location:
+    ~/work/db (the layout since 0.14.0), ~/work (a store that has not been
+    moved yet), then the ~/.mnemos default. The work locations come first
+    because on a host whose live store is under ~/work, ~/.mnemos/memory.db
+    tends to be an empty leftover from a first run, and preferring it reads
+    nothing, silently."""
     explicit = setting("memory_db") or os.environ.get("MNEMOS_DB", "").strip()
     if explicit:
         return Path(explicit).expanduser()
     home = Path.home()
-    for candidate in (home / "work" / "memory.db", home / ".mnemos" / "memory.db"):
-        if candidate.exists():
-            return candidate
-    return home / "work" / "memory.db"
+    return _first_existing((home / "work" / "db" / "memory.db",
+                            home / "work" / "memory.db",
+                            home / ".mnemos" / "memory.db"))
 
 
 def tasks_db_path() -> Path:
     explicit = setting("tasks_db")
     if explicit:
         return Path(explicit).expanduser()
-    return Path.home() / "work" / "tasks.db"
+    home = Path.home()
+    return _first_existing((home / "work" / "db" / "tasks.db",
+                            home / "work" / "tasks.db"))
 
 
 def parse_payload(raw: str) -> dict:

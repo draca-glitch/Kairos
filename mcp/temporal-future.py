@@ -56,8 +56,14 @@ def _resolve_dbs() -> tuple[Path, Path]:
                 return tasks_db_path(), memory_db_path()
             except Exception:
                 break
-    return (Path(os.environ.get("KAIROS_TASKS_DB", str(Path.home() / "work" / "tasks.db"))),
-            Path(os.environ.get("KAIROS_MEMORY_DB", str(Path.home() / "work" / "memory.db"))))
+    work = Path.home() / "work"
+
+    def conventional(name):
+        # ~/work/db is the convention; ~/work covers a store not moved there yet.
+        old = work / name
+        return old if old.exists() and not (work / "db" / name).exists() else work / "db" / name
+    return (Path(os.environ.get("KAIROS_TASKS_DB") or conventional("tasks.db")),
+            Path(os.environ.get("KAIROS_MEMORY_DB") or conventional("memory.db")))
 
 
 TASKS_DB, MEMORY_DB = _resolve_dbs()

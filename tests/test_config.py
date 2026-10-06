@@ -124,11 +124,32 @@ def test_memory_db_falls_back_to_dot_mnemos_when_the_work_store_is_absent(home):
 
 
 def test_memory_db_default_when_nothing_exists(home):
-    assert temporal_lib.memory_db_path() == home / "work" / "memory.db"
+    assert temporal_lib.memory_db_path() == home / "work" / "db" / "memory.db"
+
+
+def test_memory_db_prefers_the_db_dir_over_the_old_work_location(home):
+    for p in (home / "work" / "db" / "memory.db", home / "work" / "memory.db"):
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"")
+    assert temporal_lib.memory_db_path() == home / "work" / "db" / "memory.db"
+
+
+def test_tasks_db_prefers_the_db_dir_over_the_old_work_location(home):
+    for p in (home / "work" / "db" / "tasks.db", home / "work" / "tasks.db"):
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"")
+    assert temporal_lib.tasks_db_path() == home / "work" / "db" / "tasks.db"
+
+
+def test_tasks_db_still_finds_a_store_that_has_not_been_moved_yet(home):
+    p = home / "work" / "tasks.db"
+    p.parent.mkdir(parents=True)
+    p.write_bytes(b"")
+    assert temporal_lib.tasks_db_path() == p
 
 
 def test_tasks_db_precedence(home):
-    assert temporal_lib.tasks_db_path() == home / "work" / "tasks.db"
+    assert temporal_lib.tasks_db_path() == home / "work" / "db" / "tasks.db"
     write_config(home, {"tasks_db": "~/cfg/tasks.db"})
     assert temporal_lib.tasks_db_path() == home / "cfg" / "tasks.db"
     os.environ["KAIROS_TASKS_DB"] = "/env/tasks.db"
@@ -194,3 +215,15 @@ def test_adapters_no_longer_guess_the_memory_db(home, adapter):
     assert "KAIROS_MEMORY_DB" not in os.environ
     assert "KAIROS_TASKS_DB" not in os.environ
     assert os.environ["KAIROS_HISTORY_BACKEND"] == "ring"
+
+
+def test_an_empty_file_in_the_db_dir_does_not_shadow_a_real_store_in_the_old_location(home):
+    """sqlite3.connect() on a path that does not exist leaves a 0-byte file
+    behind. Such a leftover in ~/work/db must not hide the store that has not
+    been moved yet."""
+    empty = home / "work" / "db" / "memory.db"
+    empty.parent.mkdir(parents=True)
+    empty.write_bytes(b"")
+    real = home / "work" / "memory.db"
+    real.write_bytes(b"SQLite format 3\x00")
+    assert temporal_lib.memory_db_path() == real

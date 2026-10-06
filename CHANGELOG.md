@@ -8,7 +8,10 @@ The kit is pre-1.0: minor bumps may include incompatible changes when the cost o
 
 Next probable: a controlled with-vs-without-Kairos benchmark on time-shaped reasoning tasks to upgrade the paper's "constitutive" claim from architectural assertion to measured outcome.
 
+## [0.14.0] - 2026-10-06 (stores live in ~/work/db)
+
 ### Changed
+- **The conventional store locations are now `~/work/db/memory.db` and `~/work/db/tasks.db`.** The work directory root is not a good home for live databases, so they get a directory of their own. `memory_db_path()` resolves explicit configuration, then `MNEMOS_DB`, then the first existing of `~/work/db/memory.db`, `~/work/memory.db` and `~/.mnemos/memory.db`; `tasks_db_path()` resolves the config key, then the first existing of `~/work/db/tasks.db` and `~/work/tasks.db`. A host whose stores have not been moved yet keeps working, because the old location is still found; when nothing exists the default is the `db/` path. Explicit `memory_db`, `tasks_db`, `KAIROS_MEMORY_DB`, `KAIROS_TASKS_DB` and `MNEMOS_DB` behave as before. Move a store with `mnemos move` (Mnemos 10.41.0), which refuses while the file is in use and leaves a symlink at the old path. An empty file in `~/work/db/` (what `sqlite3.connect()` leaves at a path that did not exist) does not shadow a real store in the old location. The standalone fallback in `mcp/temporal-future.py` (used only when `temporal_lib` is not installed next to it) applies the same `db/`-then-old rule; the README, the Codex adapter notes and the config template follow. 4 new tests, 234 pass.
 - Public author identity is Mikael Wedlund (`CITATION.cff`, LICENSE, README). The GitHub account remains `draca-glitch`.
 
 ## [0.13.0] - 2026-09-07

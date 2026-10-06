@@ -145,7 +145,7 @@ $ # via MCP, args = {"horizon_days": 7}
 }
 ```
 
-MCP server exposing `temporal_future_query(horizon_days=7)` and `temporal_obligations_for(area, horizon_days=7)`. Reads task and memory databases directly (paths via `KAIROS_TASKS_DB` and `KAIROS_MEMORY_DB`, defaults `~/work/tasks.db` and `~/work/memory.db`). If a database does not exist on disk, that source reports `{available: false}` and the rest of the query still returns; adopters without a tasks system still get expiring-memory queries, and adopters without memory still get task queries.
+MCP server exposing `temporal_future_query(horizon_days=7)` and `temporal_obligations_for(area, horizon_days=7)`. Reads task and memory databases directly (paths via `KAIROS_TASKS_DB` and `KAIROS_MEMORY_DB`, defaults `~/work/db/tasks.db` and `~/work/db/memory.db`). If a database does not exist on disk, that source reports `{available: false}` and the rest of the query still returns; adopters without a tasks system still get expiring-memory queries, and adopters without memory still get task queries.
 
 Schema expectations:
 
@@ -220,14 +220,14 @@ One file, read by every hook, MCP server and harness adapter: `~/.config/kairos/
 | `staleness_inject` | `true` | Emit the `[staleness]` line (Layer 3 injection) |
 | `future_horizon_days` | `7` | Upcoming window for the obligations line |
 | `memory_db` | see below | Mnemos store read for expiring memories |
-| `tasks_db` | `~/work/tasks.db` | Task database read for obligations |
+| `tasks_db` | `~/work/db/tasks.db` | Task database read for obligations |
 | `state_dir` | `~/.claude/state` | Routing state, tracker log, thread rings |
 | `history_backend` | `transcript` | `transcript` (Claude Code) or `ring` (adapter harnesses) |
 | `ring_stale_seconds` | `2592000` (30d) | Prune threshold for abandoned thread rings |
 | `pattern_sources` | `transcripts` | Add `ring` to include adapter-harness prompts in Layer 4 |
 | `logged_only_suggests` | `temporal_future_query-first,temporal_staleness_audit-first` | Advisories kept in the log but not emitted |
 
-`memory_db` resolves in this order: `KAIROS_MEMORY_DB`, the config key, Mnemos's own `MNEMOS_DB`, then whichever of `~/work/memory.db` and `~/.mnemos/memory.db` exists (work store first: on hosts whose live store is under `~/work`, the `~/.mnemos` file is usually an empty first-run leftover). Set it explicitly; the fallback chain is for zero-config first runs. Template: `templates/kairos-config.example.json`.
+`memory_db` resolves in this order: `KAIROS_MEMORY_DB`, the config key, Mnemos's own `MNEMOS_DB`, then the first existing of `~/work/db/memory.db`, `~/work/memory.db` (a store not moved yet) and `~/.mnemos/memory.db` (work store first: on hosts whose live store is under `~/work`, the `~/.mnemos` file is usually an empty first-run leftover). Set it explicitly; the fallback chain is for zero-config first runs. Template: `templates/kairos-config.example.json`.
 
 ## Environment variables
 
@@ -241,7 +241,7 @@ One file, read by every hook, MCP server and harness adapter: `~/.config/kairos/
 | `CLAUDE_KIT_LOG_ROTATE_BYTES` | `10485760` (10 MB) | When tracker log rotates |
 | `CLAUDE_KIT_LOG_KEEP_ROTATIONS` | `3` | How many rotated logs to keep before deletion |
 | `CLAUDE_TRAINING_CUTOFF` | `2026-01-01` | Date staleness MCP measures elapsed days against |
-| `KAIROS_TASKS_DB` | config `tasks_db`, else `~/work/tasks.db` | Task database read by Layer 5 (temporal-future MCP) |
+| `KAIROS_TASKS_DB` | config `tasks_db`, else `~/work/db/tasks.db` (or `~/work/tasks.db` if only that exists) | Task database read by Layer 5 (temporal-future MCP) |
 | `KAIROS_MEMORY_DB` | see Configuration | Memory database read by Layer 5 for expiring memories |
 
 ## time.sh vs. custom Layer-1 sources
