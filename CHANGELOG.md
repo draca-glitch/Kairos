@@ -8,6 +8,14 @@ The kit is pre-1.0: minor bumps may include incompatible changes when the cost o
 
 Next probable: a controlled with-vs-without-Kairos benchmark on time-shaped reasoning tasks to upgrade the paper's "constitutive" claim from architectural assertion to measured outcome.
 
+## [0.14.1] - 2026-10-12 (hook timeouts are seconds)
+
+### Fixed
+- **`templates/settings.json` and the hook docstrings said `"timeout": 2000` / `3000`.** Claude Code reads a hook
+  `timeout` in SECONDS (measured 2026-10-06; the live Epsilon settings were corrected then, the shipped template and
+  the docstrings in `hooks/temporal-state.py`, `future-state.py`, `staleness-state.py` and `time.sh` were not), so a
+  copied template gave each hook about 33 minutes where 2 seconds was meant. Now 2 and 3. Mikael 2026-10-12.
+
 ## [0.14.0] - 2026-10-06 (stores live in ~/work/db)
 
 ### Changed

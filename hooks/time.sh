@@ -29,7 +29,7 @@
 #     "hooks": [{
 #       "type": "command",
 #       "command": "~/.claude/hooks/time.sh",
-#       "timeout": 2000
+#       "timeout": 2
 #     }]
 #   }]
 

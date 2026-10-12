@@ -27,7 +27,7 @@ Disable with KAIROS_STALENESS_INJECT=0 or `"staleness_inject": false` in
 
 Usage in settings.json:
   "UserPromptSubmit": [{
-    "hooks": [{ "type": "command", "command": "~/.claude/hooks/staleness-state.py", "timeout": 2000 }]
+    "hooks": [{ "type": "command", "command": "~/.claude/hooks/staleness-state.py", "timeout": 2 }]
   }]
 """
 

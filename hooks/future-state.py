@@ -30,7 +30,7 @@ Disable with KAIROS_FUTURE_INJECT=0 or `"future_inject": false` in
 
 Usage in settings.json:
   "UserPromptSubmit": [{
-    "hooks": [{ "type": "command", "command": "~/.claude/hooks/future-state.py", "timeout": 3000 }]
+    "hooks": [{ "type": "command", "command": "~/.claude/hooks/future-state.py", "timeout": 3 }]
   }]
 """
 

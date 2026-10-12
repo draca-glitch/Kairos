@@ -22,7 +22,7 @@ Logic lives in temporal_lib.py, this hook is just the renderer.
 
 Usage in settings.json:
   "UserPromptSubmit": [{
-    "hooks": [{ "type": "command", "command": "~/.claude/hooks/temporal-state.py", "timeout": 2000 }]
+    "hooks": [{ "type": "command", "command": "~/.claude/hooks/temporal-state.py", "timeout": 2 }]
   }]
 """
 
