@@ -163,6 +163,15 @@ class TestIsRealUserPrompt(unittest.TestCase):
         e = {"type": "assistant", "message": {"role": "assistant", "content": "x"}}
         self.assertFalse(is_real_user_prompt(e))
 
+    def test_events_the_user_did_not_type_are_rejected(self):
+        # Subagent kickoffs, injected context / hand-backs and compaction
+        # summaries are all written as type "user".
+        for flag in ("isSidechain", "isMeta", "isCompactSummary"):
+            e = {"type": "user", flag: True, "message": {"role": "user", "content": "hello"}}
+            self.assertFalse(is_real_user_prompt(e), flag)
+            e[flag] = False
+            self.assertTrue(is_real_user_prompt(e), flag)
+
 
 class TestNowStrWeekday(unittest.TestCase):
     """now_str carries a deterministic English weekday prefix (added after a

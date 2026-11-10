@@ -20,9 +20,16 @@ Tool: temporal_staleness_audit
 Returns:
   risk:               low | medium | high
   days_since_cutoff:  integer
+  cutoff_source:      env | assumed-default (CLAUDE_TRAINING_CUTOFF unset or
+                      unreadable; cutoff_note then says the date is a guess)
   half_life_days:     domain volatility in days (null for ageless domains)
   rationale:          one-sentence why
   suggestion:         proceed | qualify | web_search
+
+Domain inference matches keywords as whole words ("api" does not fire inside
+"therapist"). A topic whose domain is unknown is never graded above
+medium / qualify: with no volatility class there is no basis for demanding
+a search.
 
 Pure stdlib. Newline-delimited JSON-RPC 2.0 over stdin/stdout.
 
@@ -36,6 +43,7 @@ Registration in ~/.claude.json (mcpServers):
 
 import json
 import os
+import re
 import sys
 from datetime import date, datetime
 from pathlib import Path
@@ -68,11 +76,16 @@ def _import_keyword_map():
 _SHARED_KEYWORD_MAP = _import_keyword_map()
 
 
-CUTOFF_STR = os.environ.get("CLAUDE_TRAINING_CUTOFF", "2026-01-01")
+DEFAULT_CUTOFF = date(2026, 1, 1)
+CUTOFF_STR = os.environ.get("CLAUDE_TRAINING_CUTOFF", "").strip()
 try:
     CUTOFF_DATE = datetime.strptime(CUTOFF_STR, "%Y-%m-%d").date()
+    CUTOFF_ASSUMED = False
 except Exception:
-    CUTOFF_DATE = date(2026, 1, 1)
+    # The default is a guess about the model in use. Every verdict scales
+    # with it, so the output has to say when it was not configured.
+    CUTOFF_DATE = DEFAULT_CUTOFF
+    CUTOFF_ASSUMED = True
 
 
 # Domain volatility: half-life in days. None = ageless (knowledge does
@@ -123,10 +136,52 @@ DOMAIN_HALF_LIFE = {
 }
 
 
+# Placeholder half-life for a topic with no recognised domain. It decides
+# only whether such a topic is still "fresh"; see the cap in assess().
+UNKNOWN_HALF_LIFE = 60
+
+
 def normalize_domain(domain: str | None) -> str:
     if not domain:
         return ""
     return domain.strip().lower().replace("_", "-")
+
+
+# Keywords that are word beginnings by design ("vulnerab" covers vulnerable
+# and vulnerability). Everything else must match as a whole word.
+KEYWORD_STEMS = frozenset({"vulnerab", "diagnos"})
+
+_KEYWORD_PATTERNS: dict[str, re.Pattern] = {}
+
+
+def _keyword_pattern(needle: str) -> re.Pattern:
+    """Whole-word pattern for one keyword.
+
+    Substring matching put "api" inside "therapist" and "cost" inside
+    "costume". A keyword now has to start a word and end one, allowing a
+    plain inflection (apis, priced, libraries, claude's) and a trailing
+    version number (python3). Stems and keywords that end in punctuation
+    ("gpt-") stay open-ended on the right.
+    """
+    cached = _KEYWORD_PATTERNS.get(needle)
+    if cached is not None:
+        return cached
+    start = r"(?<![a-z0-9])"
+    if needle in KEYWORD_STEMS:
+        pattern = start + re.escape(needle) + r"[a-z]*"
+    elif not needle[-1:].isalnum():
+        pattern = start + re.escape(needle)
+    else:
+        if needle.endswith("y"):
+            body = re.escape(needle[:-1]) + r"(?:y|ies)"
+        elif needle.endswith("e"):
+            body = re.escape(needle[:-1]) + r"(?:e|es|ed|ing)"
+        else:
+            body = re.escape(needle) + r"(?:s|es|ed|ing)?"
+        pattern = start + body + r"(?:'s)?(?![a-z])"
+    compiled = re.compile(pattern)
+    _KEYWORD_PATTERNS[needle] = compiled
+    return compiled
 
 
 def infer_domain_from_topic(topic: str) -> str:
@@ -144,7 +199,7 @@ def infer_domain_from_topic(topic: str) -> str:
         ("zero-day", "security"), ("0day", "security"),
         ("price", "pricing"), ("pricing", "pricing"), ("cost", "pricing"),
         ("stock", "stocks"), ("market", "markets"),
-        ("crypto", "crypto"), ("bitcoin", "crypto"),
+        ("crypto", "crypto"), ("cryptocurrency", "crypto"), ("bitcoin", "crypto"),
         ("election", "politics"), ("news", "news"),
         ("law", "legal"), ("statute", "legal"), ("regulation", "regulation"),
         ("medical", "medical"), ("treatment", "medical"), ("diagnos", "medical"), ("drug", "medical"),
@@ -154,7 +209,7 @@ def infer_domain_from_topic(topic: str) -> str:
         ("react", "framework"),
         ("history", "history"), ("theorem", "math"), ("proof", "math"), ("equation", "math"),
     ]
-    matches = [dom for needle, dom in keyword_map if needle in t]
+    matches = [dom for needle, dom in keyword_map if _keyword_pattern(needle).search(t)]
     if not matches:
         return ""
 
@@ -174,14 +229,16 @@ def assess(topic: str, domain_in: str | None) -> dict:
     domain = normalize_domain(domain_in) or infer_domain_from_topic(topic)
     days = days_since_cutoff()
 
+    known_domain = True
     if not domain:
-        # Unknown domain → treat conservatively as medium tech-pace.
         domain = "general-unknown"
-        half_life = 60
+        half_life = UNKNOWN_HALF_LIFE
+        known_domain = False
     elif domain in DOMAIN_HALF_LIFE:
         half_life = DOMAIN_HALF_LIFE[domain]
     else:
-        half_life = 60  # unrecognized → conservative default
+        half_life = UNKNOWN_HALF_LIFE
+        known_domain = False
 
     if half_life is None:
         risk = "low"
@@ -204,6 +261,16 @@ def assess(topic: str, domain_in: str | None) -> dict:
                 f"(ratio {ratio:.2f}), qualify answer with 'as of training cutoff' and "
                 f"note possible drift."
             )
+        elif not known_domain:
+            # No volatility class: the placeholder half-life can say "fresh"
+            # but must not escalate. Grading every unrecognised topic high
+            # sent timeless questions to a web search.
+            risk = "medium"
+            suggestion = "qualify"
+            rationale = (
+                f"{days}d since training cutoff and no known volatility class for this "
+                f"topic; qualify anything time-sensitive, timeless facts need no check."
+            )
         else:
             risk = "high"
             suggestion = "web_search"
@@ -212,17 +279,25 @@ def assess(topic: str, domain_in: str | None) -> dict:
                 f"(ratio {ratio:.2f}), likely stale; verify with web search before answering."
             )
 
-    return {
+    verdict = {
         "topic": topic,
         "domain": domain,
         "domain_source": "explicit" if domain_in else "inferred-or-default",
         "days_since_cutoff": days,
         "cutoff_date": CUTOFF_DATE.isoformat(),
+        "cutoff_source": "assumed-default" if CUTOFF_ASSUMED else "env",
         "half_life_days": half_life,
         "risk": risk,
         "rationale": rationale,
         "suggestion": suggestion,
     }
+    if CUTOFF_ASSUMED:
+        verdict["cutoff_note"] = (
+            f"CLAUDE_TRAINING_CUTOFF is not set to a YYYY-MM-DD date, so {CUTOFF_DATE.isoformat()} "
+            f"is an assumed default and days_since_cutoff may be wrong for this model; "
+            f"set the variable to the model's real training cutoff."
+        )
+    return verdict
 
 
 def tool_temporal_staleness_audit(args: dict) -> dict:
@@ -245,7 +320,10 @@ TOOL_DEFINITIONS = [
             "cutoff, domain half-life, rationale, and a procedural suggestion (proceed / qualify / "
             "web_search). Domains are categorized by volatility: news/sports are 7-day half-life, "
             "security/CVE 30-day, tech/software 90-day, medical/legal 180-day, math/history are "
-            "ageless. If domain is omitted, the tool infers one from the topic text."
+            "ageless. If domain is omitted, the tool infers one from whole-word keywords in the "
+            "topic text; a topic with no recognisable domain is graded at most medium / qualify. "
+            "cutoff_source says whether the cutoff date was configured (env) or is an assumed "
+            "default; when assumed, cutoff_note is present and days_since_cutoff is a guess."
         ),
         "inputSchema": {
             "type": "object",
@@ -316,7 +394,7 @@ def protocol_supported(version):
 
 
 SERVER_NAME = "temporal-staleness"
-SERVER_VERSION = "1.2.0"
+SERVER_VERSION = "1.2.1"
 SERVER_INSTRUCTIONS = "Audit whether time-volatile claims in context may be stale relative to the assistant's training cutoff."
 META_PROTOCOL = "io.modelcontextprotocol/protocolVersion"
 META_SERVER_INFO = "io.modelcontextprotocol/serverInfo"
@@ -365,13 +443,22 @@ def _unsupported_version(id_, requested):
 
 
 def _read_msg():
-    line = sys.stdin.readline()
-    if not line:
-        return None
-    try:
-        return json.loads(line)
-    except Exception:
-        return None
+    """Next JSON-RPC message, or None at end of input. A blank line, invalid
+    JSON or a payload that is not an object is skipped: only EOF ends the
+    server, since one stray line must not take the tools away mid-session."""
+    while True:
+        line = sys.stdin.readline()
+        if not line:
+            return None
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            msg = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(msg, dict):
+            return msg
 
 
 def _send(obj):
@@ -396,7 +483,9 @@ def main():
             break
         method = msg.get("method", "")
         id_ = msg.get("id")
-        params = msg.get("params", {})
+        params = msg.get("params")
+        if not isinstance(params, dict):
+            params = {}
 
         if id_ is None:
             continue
@@ -430,6 +519,8 @@ def main():
                     "serverInfo": _server_info(),
                 },
             })
+        elif method == "ping":
+            _send({"jsonrpc": "2.0", "id": id_, "result": {}})
         elif method == "tools/list":
             _send({"jsonrpc": "2.0", "id": id_, "result": {
                 "tools": sorted(TOOL_DEFINITIONS, key=lambda t: t.get("name", "")),
@@ -438,7 +529,9 @@ def main():
             }})
         elif method == "tools/call":
             tool_name = params.get("name", "")
-            tool_args = params.get("arguments", {}) or {}
+            tool_args = params.get("arguments")
+            if not isinstance(tool_args, dict):
+                tool_args = {}
             if tool_name != "temporal_staleness_audit":
                 _send({
                     "jsonrpc": "2.0", "id": id_,

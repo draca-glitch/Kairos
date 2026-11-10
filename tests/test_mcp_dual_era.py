@@ -136,6 +136,39 @@ def test_tool_calls_still_work_under_the_modern_envelope(server, call):
     assert json.loads(result["content"][0]["text"])
 
 
+# One stray line on stdin used to end the server: a blank line or invalid JSON
+# read as end of input, and "params": null raised on the first .get(). The
+# tools then vanished for the rest of the session with nothing in the log.
+
+
+@pytest.mark.parametrize("server", SERVERS)
+def test_server_survives_junk_lines_and_null_params(server):
+    lines = [
+        "",
+        "   ",
+        "this is not json",
+        "[1, 2, 3]",
+        json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": None}),
+        json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": None}),
+        json.dumps({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                    "params": {"name": "nope", "arguments": None}}),
+        json.dumps({"jsonrpc": "2.0", "id": 4, "method": "tools/list", "params": "junk"}),
+        json.dumps({"jsonrpc": "2.0", "id": 5, "method": "ping"}),
+        json.dumps({"jsonrpc": "2.0", "id": 6, "method": "tools/list"}),
+    ]
+    proc = subprocess.run([sys.executable, str(MCP_DIR / f"{server}.py")],
+                          input="\n".join(lines) + "\n", capture_output=True, text=True, timeout=120)
+    assert proc.returncode == 0, proc.stderr
+    out = {r.get("id"): r for r in map(json.loads, filter(str.strip, proc.stdout.splitlines()))}
+    assert sorted(out) == [1, 2, 3, 4, 5, 6], "every request after the junk must be answered"
+    assert out[1]["result"]["protocolVersion"] == LEGACY
+    assert out[2]["result"]["isError"] is True
+    assert out[3]["result"]["isError"] is True
+    assert out[4]["result"]["tools"]
+    assert "error" not in out[5]
+    assert out[6]["result"]["tools"]
+
+
 # The published revisions between the two eras (2025-03-26, 2025-06-18) still
 # open with initialize, so the legacy path serves them. They must be accepted:
 # a client negotiating one of them worked before the version gate existed, and

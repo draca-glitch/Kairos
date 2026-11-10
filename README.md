@@ -50,6 +50,8 @@ Six metrics:
 - `gap_distribution`: between-session gap distribution
 - `current_state_vs_baseline`: now vs historical for this hour/dow
 
+Only prompts the user typed are counted: subagent transcripts (`<session>/subagents/`) and events flagged `isSidechain`, `isMeta` or `isCompactSummary` (subagent kickoffs, injected context, subagent hand-backs, compaction summaries) are skipped. A session is a run of prompts in one transcript with no idle gap above 30 minutes, so a transcript resumed the next day is two sessions. `days_back` is clamped to 1-365, and a window with no prompts returns a `no data` note instead of zeros.
+
 Pure stdlib. Registered as `temporal-pattern` MCP server in `~/.claude.json`. Activates per-session.
 
 ## Temporal state line
@@ -58,7 +60,7 @@ Pure stdlib. Registered as `temporal-pattern` MCP server in `~/.claude.json`. Ac
 [temporal-state] gap=11h17m | cross-day=yes | now=02:02_CEST(late-night) | cadence=resumed-after-long-gap | phase=interruption-pivot
 ```
 
-Parses the last 20 real user prompts from the current session JSONL (filtering out tool-results and task-notifications) and derives:
+Parses the last 20 real user prompts from the current session JSONL (filtering out tool-results, task-notifications, and the events Claude Code writes as `user` that nobody typed: `isSidechain`, `isMeta`, `isCompactSummary`) and derives:
 
 - **gap**: seconds/minutes/hours since the previous user message
 - **cross-day**: did the local date change since the last message
@@ -123,7 +125,7 @@ MCP server exposing `temporal_staleness_audit(topic, domain?)`. Returns a risk a
 | news, politics, sports | 7 d |
 | crypto, weather | 1–3 d |
 
-Suggestions: `proceed` (low risk), `qualify` (medium), `web_search` (high). Domain is optional, if omitted, the tool infers from keywords in the topic. Training cutoff is `2026-01-01` by default; override via `CLAUDE_TRAINING_CUTOFF` env var.
+Suggestions: `proceed` (low risk), `qualify` (medium), `web_search` (high). Domain is optional, if omitted, the tool infers from keywords in the topic, matched as whole words (`api` does not fire inside `therapist`). A topic with no recognisable domain is graded at most `medium` / `qualify`. Training cutoff is `2026-01-01` by default; set `CLAUDE_TRAINING_CUTOFF` to the real cutoff of the model in use. While it is unset the result carries `cutoff_source: "assumed-default"` and a `cutoff_note`, and the injected `[staleness]` line reads "since assumed cutoff".
 
 ## Future orientation (Layer 5)
 
@@ -146,6 +148,8 @@ $ # via MCP, args = {"horizon_days": 7}
 ```
 
 MCP server exposing `temporal_future_query(horizon_days=7)` and `temporal_obligations_for(area, horizon_days=7)`. Reads task and memory databases directly (paths via `KAIROS_TASKS_DB` and `KAIROS_MEMORY_DB`, defaults `~/work/db/tasks.db` and `~/work/db/memory.db`). If a database does not exist on disk, that source reports `{available: false}` and the rest of the query still returns; adopters without a tasks system still get expiring-memory queries, and adopters without memory still get task queries.
+
+`counts` are true totals; each task list holds at most 50 rows. `area` in `temporal_obligations_for` is an exact area name or a prefix of any hyphen-separated part of one (with areas `work-site-a` and `work-site-b`, both `work` and `site` select the two; `matched_areas` in the result says which). An area that matches nothing is an error listing the known areas, never an empty result. `expiring_memories.expiring` holds active memories whose `valid_until` falls today or later inside the horizon; `expiring_memories.expired_active` gives the count of active memories already past `valid_until` and the newest five. A memory Mnemos has superseded (an outgoing `evolves` or `superseded_by` link, with `valid_until` set to the day it was replaced) is in neither.
 
 Schema expectations:
 
@@ -240,7 +244,7 @@ One file, read by every hook, MCP server and harness adapter: `~/.config/kairos/
 | `CLAUDE_KIT_TRANSCRIPT_MAX_IDLE_SECONDS` | `14400` (4h) | How stale a transcript can be before fallback path gives up |
 | `CLAUDE_KIT_LOG_ROTATE_BYTES` | `10485760` (10 MB) | When tracker log rotates |
 | `CLAUDE_KIT_LOG_KEEP_ROTATIONS` | `3` | How many rotated logs to keep before deletion |
-| `CLAUDE_TRAINING_CUTOFF` | `2026-01-01` | Date staleness MCP measures elapsed days against |
+| `CLAUDE_TRAINING_CUTOFF` | `2026-01-01` (reported as assumed while unset) | Date staleness MCP measures elapsed days against; set it to the model's real training cutoff |
 | `KAIROS_TASKS_DB` | config `tasks_db`, else `~/work/db/tasks.db` (or `~/work/tasks.db` if only that exists) | Task database read by Layer 5 (temporal-future MCP) |
 | `KAIROS_MEMORY_DB` | see Configuration | Memory database read by Layer 5 for expiring memories |
 

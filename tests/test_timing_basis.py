@@ -107,6 +107,14 @@ def write_transcript(home: Path, session_id: str, events: list[tuple[str, dateti
         if kind == "user":
             lines.append({"type": "user", "timestamp": stamp,
                           "message": {"role": "user", "content": "hello"}})
+        elif kind in ("handback", "sidechain_user", "compact_summary"):
+            flag = {"handback": "isMeta", "sidechain_user": "isSidechain",
+                    "compact_summary": "isCompactSummary"}[kind]
+            lines.append({"type": "user", "timestamp": stamp, flag: True,
+                          "message": {"role": "user", "content": "report text"}})
+        elif kind == "sidechain_assistant":
+            lines.append({"type": "assistant", "timestamp": stamp, "isSidechain": True,
+                          "message": {"role": "assistant", "content": [{"type": "text", "text": "ok"}]}})
         elif kind == "tool_result":
             lines.append({"type": "user", "timestamp": stamp,
                           "message": {"role": "user",
@@ -143,6 +151,56 @@ def test_compute_state_classifies_on_the_users_gap_not_the_assistants(home, monk
     assert 14 * 60 <= state["turn_gap_seconds"] <= 16 * 60
     assert state["cadence"] == "active-collaboration"
     assert state["gap_str"] == state["reply_gap_str"]
+
+
+def test_collect_turn_timestamps_ignores_events_the_user_did_not_type(home):
+    path = write_transcript(home, "s4", [
+        ("user", ago(minutes=30)), ("assistant", ago(minutes=29)),
+        ("handback", ago(minutes=20)), ("assistant", ago(minutes=19)),
+        ("sidechain_user", ago(minutes=18)), ("sidechain_assistant", ago(minutes=17)),
+        ("compact_summary", ago(minutes=16)),
+    ])
+    prompts, replies = temporal_lib.collect_turn_timestamps(path)
+    assert len(prompts) == 1
+    assert len(replies) == 2          # the sidechain reply is the agent's, not this thread's
+
+
+def test_subagent_handbacks_do_not_read_as_rapid_fire(home):
+    """Three hand-backs half a minute apart used to count as three prompts.
+    The user's one-minute pause before the next real prompt was then read
+    against a burst nobody typed and came out rapid-fire."""
+    now = datetime.now(timezone.utc)
+    write_transcript(home, "s5", [
+        ("user", now - timedelta(minutes=40)),
+        ("assistant", now - timedelta(minutes=39)),
+        ("handback", now - timedelta(seconds=150)), ("assistant", now - timedelta(seconds=145)),
+        ("handback", now - timedelta(seconds=120)), ("assistant", now - timedelta(seconds=115)),
+        ("handback", now - timedelta(seconds=90)), ("assistant", now - timedelta(seconds=60)),
+    ])
+    os.environ["CLAUDE_SESSION_ID"] = "s5"
+    state = temporal_lib.compute_state({"session_id": "s5", "prompt": "x"})
+    assert state["prompts_count"] == 1
+    assert 39 * 60 <= state["turn_gap_seconds"] <= 41 * 60
+    # The user's own pause still runs from the assistant's last word.
+    assert state["gap_basis"] == "reply"
+    assert 55 <= state["gap_seconds"] <= 75
+    assert len(state["gaps_seconds"]) == 1
+    assert state["cadence"] == "active-collaboration"
+
+
+def test_find_transcript_never_returns_a_subagent_file(home):
+    projects = home / ".claude" / "projects" / "-root"
+    sub = projects / "s6" / "subagents"
+    sub.mkdir(parents=True)
+    (sub / "agent-a1.jsonl").write_text("{}\n", encoding="utf-8")
+    (sub / "s6.jsonl").write_text("{}\n", encoding="utf-8")
+    os.environ["CLAUDE_SESSION_ID"] = "s6"
+    # No main transcript for s6: neither the id lookup nor the newest-file
+    # fallback may hand back an agent's transcript.
+    assert temporal_lib.find_transcript({"session_id": "s6"}) is None
+    main = projects / "s6.jsonl"
+    main.write_text("{}\n", encoding="utf-8")
+    assert temporal_lib.find_transcript({"session_id": "s6"}) == main
 
 
 def test_compute_state_without_assistant_events_reports_turn_basis(home):

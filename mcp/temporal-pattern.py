@@ -16,10 +16,15 @@ Tool: temporal_pattern_query
     session_durations         - distribution of session length in minutes
     gap_distribution          - distribution of gaps between sessions
     current_state_vs_baseline - now vs historical baseline for this hour/dow
-  days_back (default 60): look-back window
+  days_back (default 60, clamped to 1-365): look-back window
 
 Reads ~/.claude/projects/-<cwd>/*.jsonl (or any path under
 ~/.claude/projects/), filters to real user-typed prompts, aggregates.
+Subagent transcripts (any path under a subagents/ directory) and events
+flagged isSidechain, isMeta or isCompactSummary are not prompts and are
+skipped. A session is a run of prompts in one transcript with no idle gap
+above 30 minutes, so a transcript resumed the next day counts as two
+sessions, not one day-long one. An empty window reports "no data".
 
 Pure stdlib. Newline-delimited JSON-RPC 2.0 over stdin/stdout.
 
@@ -93,7 +98,14 @@ def _setting_path(name: str, legacy_env: str, default: Path) -> Path:
     return Path(_setting_str(name, f"KAIROS_{name.upper()}", str(default))).expanduser()
 
 
+NON_PROMPT_FLAGS = ("isSidechain", "isMeta", "isCompactSummary")
+
+
 def _is_real_user_prompt(event: dict) -> bool:
+    # Checked here as well as in temporal_lib so that a newer server next to
+    # an older installed library still excludes agent traffic.
+    if any(event.get(flag) for flag in NON_PROMPT_FLAGS):
+        return False
     if _shared_filter is not None:
         return _shared_filter(event)
     # Inline fallback, only used when temporal_lib is not reachable.
@@ -156,6 +168,8 @@ def _iter_user_prompts(days_back: int):
         return
     cutoff = datetime.now(timezone.utc) - timedelta(days=days_back)
     for jsonl in PROJECTS_DIR.rglob("*.jsonl"):
+        if "subagents" in jsonl.relative_to(PROJECTS_DIR).parts:
+            continue
         try:
             mtime = datetime.fromtimestamp(jsonl.stat().st_mtime, tz=timezone.utc)
             if mtime < cutoff:
@@ -166,7 +180,7 @@ def _iter_user_prompts(days_back: int):
                         e = json.loads(line)
                     except Exception:
                         continue
-                    if not _is_real_user_prompt(e):
+                    if not isinstance(e, dict) or not _is_real_user_prompt(e):
                         continue
                     ts = e.get("timestamp")
                     if not ts:
@@ -197,18 +211,49 @@ def _build_corpus(days_back: int):
     return prompts
 
 
+SESSION_IDLE_GAP_MIN = 30
+SESSION_DEFINITION = (
+    f"a run of prompts in one transcript with no idle gap above {SESSION_IDLE_GAP_MIN} min"
+)
+NO_DATA_NOTE = "no data: no user prompts in the window"
+
+
+def _split_sessions(prompts, idle_gap_min: int = SESSION_IDLE_GAP_MIN):
+    """Working sessions as lists of prompt times, ordered by start.
+
+    A transcript id alone is not a session: one resumed after a night spans
+    days, and first-to-last prompt then measures the calendar, not the work.
+    Each transcript is cut wherever two consecutive prompts are further apart
+    than the idle gap."""
+    by_id = defaultdict(list)
+    for dt, sid in prompts:
+        by_id[sid].append(dt)
+    limit_s = idle_gap_min * 60
+    sessions = []
+    for dts in by_id.values():
+        dts.sort()
+        run = [dts[0]]
+        for dt in dts[1:]:
+            if (dt - run[-1]).total_seconds() > limit_s:
+                sessions.append(run)
+                run = [dt]
+            else:
+                run.append(dt)
+        sessions.append(run)
+    sessions.sort(key=lambda run: run[0])
+    return sessions
+
+
 def _metric_overview(prompts):
     if not prompts:
-        return {"total_prompts": 0, "note": "no transcript data in window"}
+        return {"total_prompts": 0, "note": NO_DATA_NOTE}
 
-    sessions = defaultdict(list)
-    for dt, sid in prompts:
-        sessions[sid].append(dt)
+    sessions = _split_sessions(prompts)
 
     session_durations_min = []
-    for sid, dts in sessions.items():
+    for dts in sessions:
         if len(dts) >= 2:
-            d = (max(dts) - min(dts)).total_seconds() / 60
+            d = (dts[-1] - dts[0]).total_seconds() / 60
             session_durations_min.append(d)
 
     hours = Counter(_local(dt).hour for dt, _ in prompts)
@@ -223,6 +268,7 @@ def _metric_overview(prompts):
     return {
         "total_prompts": len(prompts),
         "total_sessions": len(sessions),
+        "session_definition": SESSION_DEFINITION,
         "date_range": {
             "first": first.strftime("%Y-%m-%d %H:%M %Z"),
             "last": last.strftime("%Y-%m-%d %H:%M %Z"),
@@ -254,21 +300,19 @@ def _metric_heatmap_dow(prompts):
 
 
 def _metric_session_durations(prompts):
-    sessions = defaultdict(list)
-    for dt, sid in prompts:
-        sessions[sid].append(dt)
-
     durations_min = []
-    for dts in sessions.values():
+    for dts in _split_sessions(prompts):
         if len(dts) >= 2:
-            durations_min.append((max(dts) - min(dts)).total_seconds() / 60)
+            durations_min.append((dts[-1] - dts[0]).total_seconds() / 60)
 
     if not durations_min:
-        return {"sessions": 0}
+        return {"sessions_with_multiple_prompts": 0, "session_definition": SESSION_DEFINITION,
+                "note": "no data: no session in the window has two or more prompts"}
 
     durations_min.sort()
     n = len(durations_min)
     return {
+        "session_definition": SESSION_DEFINITION,
         "sessions_with_multiple_prompts": n,
         "min_min": round(durations_min[0], 1),
         "p25_min": round(durations_min[n // 4], 1),
@@ -281,14 +325,7 @@ def _metric_session_durations(prompts):
 
 
 def _metric_gap_distribution(prompts):
-    sessions_first_last = []
-    sessions = defaultdict(list)
-    for dt, sid in prompts:
-        sessions[sid].append(dt)
-    for dts in sessions.values():
-        if dts:
-            sessions_first_last.append((min(dts), max(dts)))
-    sessions_first_last.sort()
+    sessions_first_last = [(dts[0], dts[-1]) for dts in _split_sessions(prompts)]
 
     gaps_min = []
     for i in range(1, len(sessions_first_last)):
@@ -297,11 +334,13 @@ def _metric_gap_distribution(prompts):
             gaps_min.append(gap_s / 60)
 
     if not gaps_min:
-        return {"between_sessions": 0}
+        return {"between_sessions": 0, "session_definition": SESSION_DEFINITION,
+                "note": "no data: fewer than two separate sessions in the window"}
 
     gaps_min.sort()
     n = len(gaps_min)
     return {
+        "session_definition": SESSION_DEFINITION,
         "between_sessions": n,
         "min_min": round(gaps_min[0], 1),
         "p25_min": round(gaps_min[n // 4], 1),
@@ -376,13 +415,26 @@ METRICS = {
 }
 
 
+def _clamp_days_back(value) -> int:
+    try:
+        days = int(value)
+    except (TypeError, ValueError):
+        days = 60
+    return max(1, min(days, 365))
+
+
 def tool_temporal_pattern_query(args: dict) -> dict:
-    metric = args.get("metric", "overview")
-    days_back = int(args.get("days_back", 60))
+    metric = args.get("metric") or "overview"
+    days_back = _clamp_days_back(args.get("days_back", 60))
     if metric not in METRICS:
         return {"error": f"unknown metric: {metric}. valid: {sorted(METRICS.keys())}"}
     prompts = _build_corpus(days_back)
-    result = METRICS[metric](prompts)
+    if not prompts:
+        # Every metric would otherwise render zeros as a finding ("very rare
+        # for this hour"), which reads as a pattern where there is none.
+        result = {"total_prompts": 0, "note": NO_DATA_NOTE}
+    else:
+        result = METRICS[metric](prompts)
     return {"metric": metric, "days_back": days_back, "data": result}
 
 
@@ -395,10 +447,14 @@ TOOL_DEFINITIONS = [
         "description": (
             "Query the user's actual temporal activity patterns derived from session transcripts. "
             "Lets Claude calibrate pacing/tone against the user's real rhythm rather than heuristics. "
+            "Counts only prompts the user typed: subagent transcripts, injected context, subagent "
+            "hand-backs and compaction summaries are excluded. "
             "Metrics: overview (summary), heatmap_hour (activity by hour-of-day), heatmap_dow "
             "(by day-of-week), session_durations (distribution in minutes), gap_distribution "
             "(between-session gaps), current_state_vs_baseline (now vs typical for this "
-            "hour/dow + gap-since-last-prompt). days_back defaults to 60."
+            "hour/dow + gap-since-last-prompt). A session is a run of prompts in one transcript "
+            "with no idle gap above 30 minutes. days_back defaults to 60 and is clamped to 1-365. "
+            "A window with no prompts returns a 'no data' note, not zeros."
         ),
         "inputSchema": {
             "type": "object",
@@ -471,7 +527,7 @@ def protocol_supported(version):
 
 
 SERVER_NAME = "temporal-pattern"
-SERVER_VERSION = "1.2.0"
+SERVER_VERSION = "1.2.1"
 SERVER_INSTRUCTIONS = "Query temporal patterns in this user's own interaction history: session cadence, hour and weekday heatmaps, gap distribution, and current-vs-baseline drift."
 META_PROTOCOL = "io.modelcontextprotocol/protocolVersion"
 META_SERVER_INFO = "io.modelcontextprotocol/serverInfo"
@@ -520,13 +576,22 @@ def _unsupported_version(id_, requested):
 
 
 def _read_msg():
-    line = sys.stdin.readline()
-    if not line:
-        return None
-    try:
-        return json.loads(line)
-    except Exception:
-        return None
+    """Next JSON-RPC message, or None at end of input. A blank line, invalid
+    JSON or a payload that is not an object is skipped: only EOF ends the
+    server, since one stray line must not take the tools away mid-session."""
+    while True:
+        line = sys.stdin.readline()
+        if not line:
+            return None
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            msg = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(msg, dict):
+            return msg
 
 
 def _send(obj):
@@ -551,7 +616,9 @@ def main():
             break
         method = msg.get("method", "")
         id_ = msg.get("id")
-        params = msg.get("params", {})
+        params = msg.get("params")
+        if not isinstance(params, dict):
+            params = {}
 
         if id_ is None:
             continue
@@ -585,6 +652,8 @@ def main():
                     "serverInfo": _server_info(),
                 },
             })
+        elif method == "ping":
+            _send({"jsonrpc": "2.0", "id": id_, "result": {}})
         elif method == "tools/list":
             _send({"jsonrpc": "2.0", "id": id_, "result": {
                 "tools": sorted(TOOL_DEFINITIONS, key=lambda t: t.get("name", "")),
@@ -593,7 +662,9 @@ def main():
             }})
         elif method == "tools/call":
             tool_name = params.get("name", "")
-            tool_args = params.get("arguments", {}) or {}
+            tool_args = params.get("arguments")
+            if not isinstance(tool_args, dict):
+                tool_args = {}
             if tool_name != "temporal_pattern_query":
                 _send({
                     "jsonrpc": "2.0", "id": id_,

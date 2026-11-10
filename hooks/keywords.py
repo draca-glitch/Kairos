@@ -2,10 +2,13 @@
 Shared keyword taxonomy for Layer 3 (staleness) and Layer 6 R7 (routing).
 
 KEYWORD_TO_DOMAIN
-    Substring -> domain mapping used by mcp/temporal-staleness.py to infer a
-    topic's domain from the prompt text. First match wins ordering does NOT
-    apply here: the staleness module collects all matches and picks the one
-    with the shortest half-life (see DOMAIN_HALF_LIFE there).
+    Keyword -> domain mapping used by mcp/temporal-staleness.py to infer a
+    topic's domain from the prompt text. Keywords match as whole words (plain
+    inflections allowed); the stems listed in KEYWORD_STEMS there and
+    keywords ending in punctuation ("gpt-") match as word beginnings. First
+    match wins ordering does NOT apply here: the staleness module collects
+    all matches and picks the one with the shortest half-life (see
+    DOMAIN_HALF_LIFE there).
 
 R7_TRIGGER_KEYWORDS
     Tuple of substrings that fire R7 in hooks/temporal-routing.py: if any
@@ -38,6 +41,7 @@ KEYWORD_TO_DOMAIN: list[tuple[str, str]] = [
     ("market", "markets"),
 
     ("crypto", "crypto"),
+    ("cryptocurrency", "crypto"),
     ("bitcoin", "crypto"),
 
     ("election", "politics"),

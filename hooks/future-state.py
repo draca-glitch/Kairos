@@ -102,7 +102,8 @@ def render(result: dict, widened: bool) -> str | None:
 
     parts = []
     if overdue:
-        high = sum(1 for t in tasks.get("overdue", []) if t.get("priority") == "high")
+        high = counts.get("overdue_high",
+                          sum(1 for t in tasks.get("overdue", []) if t.get("priority") == "high"))
         parts.append(f"{overdue} overdue" + (f" ({high} high)" if high else ""))
     if due_today:
         parts.append(f"{due_today} due today")

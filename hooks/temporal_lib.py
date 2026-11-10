@@ -137,6 +137,17 @@ def is_task_notification(payload: dict) -> bool:
     return "<task-notification>" in prompt
 
 
+def is_subagent_transcript(path: Path, root: Path | None = None) -> bool:
+    """Subagent runs are written to <session>/subagents/*.jsonl. They hold an
+    agent's working history, not the user's, so nothing here reads them.
+    With `root`, only the directories below it are considered."""
+    try:
+        parts = path.relative_to(root).parts if root is not None else path.parts
+    except ValueError:
+        parts = path.parts
+    return "subagents" in parts[:-1]
+
+
 def find_transcript(payload: dict | None = None) -> Path | None:
     home = Path.home() / ".claude" / "projects"
     if not home.exists():
@@ -148,7 +159,8 @@ def find_transcript(payload: dict | None = None) -> Path | None:
     )
     if session_id:
         for jsonl in home.rglob(f"{session_id}.jsonl"):
-            return jsonl
+            if not is_subagent_transcript(jsonl, home):
+                return jsonl
 
     # Newest-transcript mtime fallback, but ONLY when a Claude session
     # identity was present (env or payload) and its file was simply not
@@ -160,7 +172,8 @@ def find_transcript(payload: dict | None = None) -> Path | None:
     if not session_id:
         return None
 
-    candidates = sorted(home.rglob("*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+    candidates = sorted((p for p in home.rglob("*.jsonl") if not is_subagent_transcript(p, home)),
+                        key=lambda p: p.stat().st_mtime, reverse=True)
     if candidates and time.time() - candidates[0].stat().st_mtime < TRANSCRIPT_MAX_IDLE_SECONDS:
         return candidates[0]
     return None
@@ -308,8 +321,17 @@ def _prune_stale_rings(ring_dir: Path, keep: Path | None = None) -> None:
         return
 
 
+# Claude Code writes several things as type "user" that the user never typed:
+# subagent kickoff prompts (isSidechain), injected context and subagent
+# hand-backs (isMeta), and compaction summaries (isCompactSummary). Counting
+# them made a hand-back look like a prompt sent seconds after the last one.
+NON_PROMPT_FLAGS = ("isSidechain", "isMeta", "isCompactSummary")
+
+
 def is_real_user_prompt(event: dict) -> bool:
     if event.get("type") != "user":
+        return False
+    if any(event.get(flag) for flag in NON_PROMPT_FLAGS):
         return False
     msg = event.get("message") or {}
     if msg.get("role") != "user":
@@ -355,11 +377,13 @@ def collect_turn_timestamps(transcript: Path, limit: int = 20) -> tuple[list[dat
                     e = json.loads(line)
                 except Exception:
                     continue
+                if not isinstance(e, dict):
+                    continue
                 if is_real_user_prompt(e):
                     dt = _event_time(e)
                     if dt is not None:
                         prompts.append(dt)
-                elif e.get("type") == "assistant":
+                elif e.get("type") == "assistant" and not e.get("isSidechain"):
                     dt = _event_time(e)
                     if dt is not None:
                         replies.append(dt)

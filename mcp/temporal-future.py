@@ -15,10 +15,21 @@ Sources (read-only, gracefully absent):
 Tools:
   temporal_future_query(horizon_days=7)
     Returns counts + curated lists of overdue / today / upcoming items.
-    Horizon defines the window for "upcoming" (default one week).
+    Horizon defines the window for "upcoming" (default one week). Counts are
+    true totals; each list holds at most 50 rows.
 
   temporal_obligations_for(area, horizon_days=7)
-    Filters to a single task area (e.g. "brf", "iss-seb-pdc1", "private-house").
+    Filters to one task area or a family of them. `area` is an exact area
+    name, or a prefix of any hyphen-separated part of one: with areas
+    "work-site-a" and "work-site-b", both "work" and "site" select the two.
+    An area that matches nothing is an error that lists the known areas.
+
+Memories: `expiring` are active memories whose valid_until falls today or
+later inside the horizon. `expired_active` counts active memories already
+past valid_until and lists the newest few. Mnemos closes a superseded memory
+by setting valid_until to the day it was replaced and linking it to its
+successor, so a memory with an outgoing evolves / superseded_by link is
+history, not an obligation, and appears in neither list.
 
 Pure stdlib. Newline-delimited JSON-RPC 2.0 over stdin/stdout.
 
@@ -100,7 +111,48 @@ def _days_until(due_str: str | None) -> int | None:
 # --- Task queries ---
 
 
-def _query_tasks(area: str | None, horizon_days: int) -> dict:
+LIST_LIMIT = 50
+
+# A due_date that is not a date (an empty string, free text) compares as a
+# string and would otherwise sit in "overdue" forever.
+_IS_DATE = " AND due_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]*'"
+
+
+def _known_areas() -> list[str] | None:
+    """Every area the task table uses, or None when the DB is unavailable."""
+    conn = _open_ro(TASKS_DB)
+    if conn is None:
+        return None
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT area FROM tasks WHERE area IS NOT NULL AND area != '' ORDER BY area"
+        ).fetchall()
+        return [r[0] for r in rows]
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+
+
+def match_areas(query: str, known: list[str]) -> list[str]:
+    """Areas selected by `query`: the exact area when one exists, otherwise
+    every area in which the query is a prefix starting at a hyphen-separated
+    part ("site" selects "work-site-a"; "ork" selects nothing)."""
+    q = query.strip().lower()
+    if not q:
+        return []
+    exact = [a for a in known if a.lower() == q]
+    if exact:
+        return exact
+    matched = []
+    for area in known:
+        parts = area.lower().split("-")
+        if any("-".join(parts[i:]).startswith(q) for i in range(len(parts))):
+            matched.append(area)
+    return matched
+
+
+def _query_tasks(area: str | list[str] | None, horizon_days: int) -> dict:
     conn = _open_ro(TASKS_DB)
     if conn is None:
         return {"available": False, "path": str(TASKS_DB)}
@@ -111,40 +163,46 @@ def _query_tasks(area: str | None, horizon_days: int) -> dict:
     where_area = ""
     params: list = []
     if area:
-        where_area = " AND area = ?"
-        params.append(area)
+        areas = [area] if isinstance(area, str) else list(area)
+        where_area = " AND area IN (" + ",".join("?" * len(areas)) + ")"
+        params.extend(areas)
 
-    overdue_q = (
-        "SELECT id, title, area, priority, due_date FROM tasks "
-        "WHERE status='open' AND due_date IS NOT NULL AND due_date < ?" + where_area +
-        " ORDER BY due_date ASC LIMIT 50"
-    )
-    today_q = (
-        "SELECT id, title, area, priority, due_date FROM tasks "
-        "WHERE status='open' AND due_date = ?" + where_area +
-        " ORDER BY priority='high' DESC, priority='medium' DESC LIMIT 50"
-    )
-    upcoming_q = (
-        "SELECT id, title, area, priority, due_date FROM tasks "
-        "WHERE status='open' AND due_date > ? AND due_date <= ?" + where_area +
-        " ORDER BY due_date ASC LIMIT 50"
-    )
+    cols = "SELECT id, title, area, priority, due_date FROM tasks "
+    overdue_w = "WHERE status='open' AND due_date IS NOT NULL AND due_date < ?" + _IS_DATE + where_area
+    today_w = "WHERE status='open' AND due_date = ?" + where_area
+    upcoming_w = "WHERE status='open' AND due_date > ? AND due_date <= ?" + _IS_DATE + where_area
+    limit = f" LIMIT {LIST_LIMIT}"
 
-    overdue = [dict(r) for r in conn.execute(overdue_q, [today_iso] + params).fetchall()]
-    due_today = [dict(r) for r in conn.execute(today_q, [today_iso] + params).fetchall()]
-    upcoming = [dict(r) for r in conn.execute(upcoming_q, [today_iso, horizon_end] + params).fetchall()]
+    def rows(where: str, order: str, args: list) -> list[dict]:
+        return [dict(r) for r in conn.execute(cols + where + order + limit, args).fetchall()]
+
+    def count(where: str, args: list) -> int:
+        return conn.execute("SELECT COUNT(*) FROM tasks " + where, args).fetchone()[0]
+
+    try:
+        # Past the cap, keep the most recently missed and drop the longest
+        # dead; the list itself stays oldest first.
+        overdue = rows(overdue_w, " ORDER BY due_date DESC", [today_iso] + params)
+        overdue.reverse()
+        due_today = rows(today_w, " ORDER BY priority='high' DESC, priority='medium' DESC",
+                         [today_iso] + params)
+        upcoming = rows(upcoming_w, " ORDER BY due_date ASC", [today_iso, horizon_end] + params)
+        # Counted separately: the lists stop at LIST_LIMIT, the counts must not.
+        counts = {
+            "overdue": count(overdue_w, [today_iso] + params),
+            "overdue_high": count(overdue_w + " AND priority='high'", [today_iso] + params),
+            "due_today": count(today_w, [today_iso] + params),
+            "upcoming_in_horizon": count(upcoming_w, [today_iso, horizon_end] + params),
+        }
+    except sqlite3.Error as e:
+        return {"available": False, "error": str(e)}
+    finally:
+        conn.close()
 
     for lst in (overdue, due_today, upcoming):
         for t in lst:
             t["days_until"] = _days_until(t.get("due_date"))
 
-    counts = {
-        "overdue": len(overdue),
-        "due_today": len(due_today),
-        "upcoming_in_horizon": len(upcoming),
-    }
-
-    conn.close()
     return {
         "available": True,
         "horizon_end": horizon_end,
@@ -152,10 +210,19 @@ def _query_tasks(area: str | None, horizon_days: int) -> dict:
         "due_today": due_today,
         "upcoming": upcoming,
         "counts": counts,
+        "list_limit": LIST_LIMIT,
     }
 
 
 # --- Memory queries ---
+
+
+EXPIRED_ACTIVE_SHOWN = 5
+
+# Outgoing link types by which Mnemos marks a memory as replaced by a newer
+# one (older -> newer). Such a memory got valid_until set on the day it was
+# superseded; that date records history, it is not a deadline.
+SUPERSEDED_LINKS = ("evolves", "superseded_by")
 
 
 def _query_expiring_memories(horizon_days: int) -> dict:
@@ -166,31 +233,55 @@ def _query_expiring_memories(horizon_days: int) -> dict:
     today_iso = _today_iso()
     horizon_end = (date.today() + timedelta(days=horizon_days)).isoformat()
 
+    cols = "SELECT id, valid_until, substr(content, 1, 120) AS preview, project, type FROM memories m "
+    day = "substr(m.valid_until, 1, 10)"
+    live = "WHERE m.valid_until IS NOT NULL AND m.status='active'"
     try:
-        rows = conn.execute(
-            "SELECT id, valid_until, substr(content, 1, 120) AS preview, project, type "
-            "FROM memories "
-            "WHERE valid_until IS NOT NULL AND valid_until > ? AND valid_until <= ? "
-            "AND status='active' "
-            "ORDER BY valid_until ASC LIMIT 50",
-            [today_iso, horizon_end],
-        ).fetchall()
+        has_links = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_links'"
+        ).fetchone() is not None
+        if has_links:
+            marks = ",".join("?" * len(SUPERSEDED_LINKS))
+            live += (" AND NOT EXISTS (SELECT 1 FROM memory_links l WHERE l.source_id = m.id"
+                     f" AND l.relation_type IN ({marks}))")
+        link_args = list(SUPERSEDED_LINKS) if has_links else []
+
+        window_w = f"{live} AND {day} >= ? AND {day} <= ?"
+        window_args = link_args + [today_iso, horizon_end]
+        rows = conn.execute(cols + window_w + f" ORDER BY {day} ASC LIMIT {LIST_LIMIT}",
+                            window_args).fetchall()
+        count = conn.execute("SELECT COUNT(*) FROM memories m " + window_w, window_args).fetchone()[0]
+
+        expired_w = f"{live} AND {day} < ?"
+        expired_args = link_args + [today_iso]
+        expired_rows = conn.execute(
+            cols + expired_w + f" ORDER BY {day} DESC, m.id DESC LIMIT {EXPIRED_ACTIVE_SHOWN}",
+            expired_args).fetchall()
+        expired_count = conn.execute("SELECT COUNT(*) FROM memories m " + expired_w,
+                                     expired_args).fetchone()[0]
     except sqlite3.Error as e:
-        conn.close()
         return {"available": False, "error": str(e)}
+    finally:
+        conn.close()
 
-    items = []
-    for r in rows:
-        d = dict(r)
-        d["days_until"] = _days_until(d.get("valid_until"))
-        items.append(d)
+    def with_days(found) -> list[dict]:
+        items = []
+        for r in found:
+            d = dict(r)
+            d["days_until"] = _days_until(d.get("valid_until"))
+            items.append(d)
+        return items
 
-    conn.close()
     return {
         "available": True,
         "horizon_end": horizon_end,
-        "expiring": items,
-        "count": len(items),
+        "expiring": with_days(rows),
+        "count": count,
+        "expired_active": {
+            "count": expired_count,
+            "newest": with_days(expired_rows),
+            "note": "active memories already past valid_until; retire or extend them",
+        },
     }
 
 
@@ -205,7 +296,8 @@ def _build_highlights(tasks: dict, mems: dict) -> list[str]:
         if c["due_today"] > 0:
             out.append(f"{c['due_today']} task(s) due TODAY")
         if c["overdue"] > 0:
-            high_overdue = sum(1 for t in tasks["overdue"] if t.get("priority") == "high")
+            high_overdue = c.get("overdue_high",
+                                 sum(1 for t in tasks["overdue"] if t.get("priority") == "high"))
             if high_overdue:
                 out.append(f"{c['overdue']} overdue task(s) ({high_overdue} high-priority)")
             else:
@@ -222,8 +314,16 @@ def _build_highlights(tasks: dict, mems: dict) -> list[str]:
 # --- Tool entry points ---
 
 
+def _clamp_horizon(value) -> int:
+    try:
+        days = int(value or 7)
+    except (TypeError, ValueError):
+        days = 7
+    return max(1, min(days, 90))
+
+
 def tool_temporal_future_query(args: dict) -> dict:
-    horizon_days = max(1, min(int(args.get("horizon_days", 7) or 7), 90))
+    horizon_days = _clamp_horizon(args.get("horizon_days", 7))
     tasks = _query_tasks(area=None, horizon_days=horizon_days)
     mems = _query_expiring_memories(horizon_days=horizon_days)
     return {
@@ -236,14 +336,27 @@ def tool_temporal_future_query(args: dict) -> dict:
 
 
 def tool_temporal_obligations_for(args: dict) -> dict:
-    area = (args.get("area") or "").strip()
+    area = str(args.get("area") or "").strip()
     if not area:
         return {"error": "area is required"}
-    horizon_days = max(1, min(int(args.get("horizon_days", 7) or 7), 90))
-    tasks = _query_tasks(area=area, horizon_days=horizon_days)
+    horizon_days = _clamp_horizon(args.get("horizon_days", 7))
+    known = _known_areas()
+    if known is None:
+        matched = [area]
+    else:
+        matched = match_areas(area, known)
+        if not matched:
+            # Zero tasks for a misspelt area reads as "nothing is due".
+            return {
+                "error": f"no task area matches '{area}'. Known areas: {', '.join(known) or '(none)'}",
+                "area": area,
+                "known_areas": known,
+            }
+    tasks = _query_tasks(area=matched, horizon_days=horizon_days)
     return {
         "now": datetime.now().astimezone().isoformat(),
         "area": area,
+        "matched_areas": matched,
         "horizon_days": horizon_days,
         "tasks": tasks,
     }
@@ -261,7 +374,12 @@ TOOL_DEFINITIONS = [
             "schedules, upcoming work, planning, or any forward-looking time concept. "
             "Returns overdue tasks, tasks due today, tasks within horizon_days, expiring "
             "memories, and a 'highlights' list of one-line summaries the model should pay "
-            "attention to. Default horizon is 7 days."
+            "attention to. Default horizon is 7 days. 'counts' are true totals; each task "
+            "list holds at most 50 rows. expiring_memories.expiring are active memories "
+            "whose valid_until falls today or later within the horizon; "
+            "expiring_memories.expired_active gives the count of active memories already "
+            "past valid_until plus the newest few. Memories superseded by a newer one are "
+            "in neither."
         ),
         "inputSchema": {
             "type": "object",
@@ -279,17 +397,20 @@ TOOL_DEFINITIONS = [
     {
         "name": "temporal_obligations_for",
         "description": (
-            "Layer 5: filtered future-orientation query for a single task area. Use when "
-            "the user is focused on one domain (e.g. 'brf', 'iss-seb-pdc1', "
-            "'private-house', 'private-mom'). Returns the same overdue/today/upcoming "
-            "structure as temporal_future_query but restricted to the requested area."
+            "Layer 5: future-orientation query filtered to one task area or a family of "
+            "areas. Use when the user is focused on one domain. 'area' is an exact area "
+            "name, or a prefix of any hyphen-separated part of one (with areas "
+            "'work-site-a' and 'work-site-b', both 'work' and 'site' select the two). "
+            "Returns the same overdue/today/upcoming structure as temporal_future_query "
+            "restricted to the matched areas, listed in 'matched_areas'. An area that "
+            "matches nothing returns an error listing the known areas, never an empty result."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "area": {
                     "type": "string",
-                    "description": "Task area to filter by (e.g. 'brf', 'iss-seb-pdc1').",
+                    "description": "Exact task area, or a prefix of one of its hyphen-separated parts.",
                 },
                 "horizon_days": {
                     "type": "integer",
@@ -355,7 +476,7 @@ def protocol_supported(version):
 
 
 SERVER_NAME = "temporal-future"
-SERVER_VERSION = "1.2.0"
+SERVER_VERSION = "1.2.1"
 SERVER_INSTRUCTIONS = "Query future-dated obligations and commitments held in the Mnemos memory store and the task database."
 META_PROTOCOL = "io.modelcontextprotocol/protocolVersion"
 META_SERVER_INFO = "io.modelcontextprotocol/serverInfo"
@@ -404,13 +525,22 @@ def _unsupported_version(id_, requested):
 
 
 def _read_msg():
-    line = sys.stdin.readline()
-    if not line:
-        return None
-    try:
-        return json.loads(line)
-    except Exception:
-        return None
+    """Next JSON-RPC message, or None at end of input. A blank line, invalid
+    JSON or a payload that is not an object is skipped: only EOF ends the
+    server, since one stray line must not take the tools away mid-session."""
+    while True:
+        line = sys.stdin.readline()
+        if not line:
+            return None
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            msg = json.loads(line)
+        except Exception:
+            continue
+        if isinstance(msg, dict):
+            return msg
 
 
 def _send(obj):
@@ -435,7 +565,9 @@ def main():
             break
         method = msg.get("method", "")
         id_ = msg.get("id")
-        params = msg.get("params", {})
+        params = msg.get("params")
+        if not isinstance(params, dict):
+            params = {}
 
         if id_ is None:
             continue
@@ -469,6 +601,8 @@ def main():
                     "serverInfo": _server_info(),
                 },
             })
+        elif method == "ping":
+            _send({"jsonrpc": "2.0", "id": id_, "result": {}})
         elif method == "tools/list":
             _send({"jsonrpc": "2.0", "id": id_, "result": {
                 "tools": sorted(TOOL_DEFINITIONS, key=lambda t: t.get("name", "")),
@@ -477,7 +611,9 @@ def main():
             }})
         elif method == "tools/call":
             tool_name = params.get("name", "")
-            tool_args = params.get("arguments", {}) or {}
+            tool_args = params.get("arguments")
+            if not isinstance(tool_args, dict):
+                tool_args = {}
             try:
                 if tool_name == "temporal_future_query":
                     result = tool_temporal_future_query(tool_args)

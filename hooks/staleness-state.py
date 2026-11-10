@@ -18,6 +18,10 @@ orients, it does not command.
 
   [staleness] 'api' risk=medium (159d since cutoff, 90d half-life): qualify
 
+When CLAUDE_TRAINING_CUTOFF is not set the audit runs on an assumed default
+cutoff, and the line says "since assumed cutoff" so the day count is not
+read as a fact about the model.
+
 Reuses the temporal-staleness MCP module (single source of truth);
 hooks/../mcp/temporal-staleness.py resolves in both the repo and the
 installed ~/.claude/ layout. Never raises into the prompt path.
@@ -74,10 +78,25 @@ def render(keyword: str, verdict: dict) -> str | None:
     days = verdict.get("days_since_cutoff")
     half_life = verdict.get("half_life_days")
     suggestion = verdict.get("suggestion") or "qualify"
+    cutoff = "assumed cutoff" if verdict.get("cutoff_source") == "assumed-default" else "cutoff"
     return (
         f"[staleness] '{keyword}' risk={verdict['risk']} "
-        f"({days}d since cutoff, {half_life}d half-life): {suggestion}"
+        f"({days}d since {cutoff}, {half_life}d half-life): {suggestion}"
     )
+
+
+def context_window(text: str, start: int, end: int, width: int = CONTEXT_CHARS) -> str:
+    """The text around a match, cut at spaces. Domain inference matches whole
+    words, so a slice that begins mid-word ("law" out of "flaw") would invent
+    a keyword that is not in the prompt."""
+    lo, hi = max(0, start - width), min(len(text), end + width)
+    if lo > 0:
+        cut = text.find(" ", lo, start)
+        lo = cut + 1 if cut != -1 else start
+    if hi < len(text):
+        cut = text.rfind(" ", end, hi)
+        hi = cut if cut != -1 else end
+    return text[lo:hi]
 
 
 def main() -> int:
@@ -103,7 +122,7 @@ def main() -> int:
         if mod is None:
             return 0
         start, end = m.span()
-        context = prompt.lower()[max(0, start - CONTEXT_CHARS):end + CONTEXT_CHARS]
+        context = context_window(prompt.lower(), start, end)
         verdict = mod.assess(context, None)
         line = render(m.group(0), verdict)
         if line:
